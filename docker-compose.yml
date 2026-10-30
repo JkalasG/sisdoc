@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sisdoc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sisdoc
+      POSTGRES_PASSWORD: sisdoc_dev
+      POSTGRES_DB: sisdoc
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: sisdoc-redis
+    restart: unless-stopped
+    ports:
+      - "6381:6379"
+    volumes:
+      - redisdata:/data
+
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: sisdoc-onlyoffice
+    restart: unless-stopped
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: "sisdoc_onlyoffice_jwt_secret_2026_seguro"
+      JWT_HEADER: "Authorization"
+      JWT_IN_BODY: "true"
+    ports:
+      - "8082:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - onlyofficedata:/var/www/onlyoffice/Data
+      - onlyofficelogs:/var/log/onlyoffice
+
+# Los archivos se guardan en disco del servidor (backend/storage, ver STORAGE_DIR).
+# El almacenamiento es un puerto: si más adelante se quiere S3/R2 solo se cambia el adaptador.
+
+volumes:
+  pgdata:
+  redisdata:
+  onlyofficedata:
+  onlyofficelogs:

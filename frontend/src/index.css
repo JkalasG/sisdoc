@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * TOKENS DE DISEÑO — única fuente de verdad de los colores (canales "R G B").
+ * Cambiar un valor aquí cambia TODA la aplicación, en claro y en oscuro.
+ * Reglas de uso: docs/DISENO.md
+ */
+@layer base {
+  :root {
+    color-scheme: light;
+    --c-paper: 240 242 245;       /* fondo de página */
+    --c-surface: 255 255 255;     /* tarjetas, barras, menús */
+    --c-line: 228 230 235;        /* bordes y separadores */
+    --c-ink: 28 30 33;            /* texto principal */
+    --c-ink-soft: 91 95 102;      /* texto secundario */
+    --c-ink-mute: 138 141 145;    /* texto terciario / placeholders */
+    --c-brand: 47 111 237;
+    --c-brand-dark: 31 87 199;    /* hover del primario */
+    --c-brand-light: 231 240 255; /* fondo suave de acento */
+    --c-brand-ring: 127 168 245;  /* anillo de foco */
+    --c-ok: 5 150 105;       --c-ok-soft: 220 247 235;   --c-ok-ink: 4 120 87;
+    --c-amber: 214 138 0;    --c-amber-soft: 255 244 219; --c-amber-ink: 122 78 14;
+    --c-danger: 217 45 62;   --c-danger-soft: 253 236 238;
+    --c-chat-sent: 221 246 211; --c-chat-bg: 234 228 218; --c-chat-accent: 14 143 126;
+    --c-chat-dark: 11 107 94;   --c-chat-tick: 52 167 232;
+    --shadow-card: 0 1px 2px rgba(0,0,0,.08);
+    --shadow-pop: 0 12px 40px rgba(0,0,0,.2);
+  }
+  [data-theme='dark'] {
+    color-scheme: dark;
+    --c-paper: 24 25 26;
+    --c-surface: 36 37 38;
+    --c-line: 62 64 66;
+    --c-ink: 228 230 235;
+    --c-ink-soft: 176 179 184;
+    --c-ink-mute: 130 134 140;
+    --c-brand: 59 117 235;
+    --c-brand-dark: 86 140 245;
+    --c-brand-light: 30 46 80;
+    --c-brand-ring: 86 140 245;
+    --c-ok: 52 211 153;      --c-ok-soft: 18 64 49;      --c-ok-ink: 110 231 183;
+    --c-amber: 214 138 0;    --c-amber-soft: 66 50 14;   --c-amber-ink: 250 205 120;
+    --c-danger: 255 99 113;  --c-danger-soft: 76 30 36;
+    --c-chat-sent: 5 92 75;  --c-chat-bg: 13 22 28;      --c-chat-accent: 0 168 132;
+    --c-chat-dark: 90 220 190; --c-chat-tick: 83 189 235;
+    --shadow-card: 0 1px 2px rgba(0,0,0,.5);
+    --shadow-pop: 0 12px 40px rgba(0,0,0,.6);
+  }
+}
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body { @apply bg-paper font-sans text-ink antialiased; }
+  h1, h2, h3 { @apply font-bold tracking-tight; }
+  :focus-visible { @apply outline-none ring-2 ring-brand-ring ring-offset-1; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { @apply rounded-full bg-ink/20; }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer components {
+  .card { @apply rounded-xl bg-surface shadow-card; }
+  .field {
+    @apply w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-[15px] text-ink
+      placeholder:text-ink-mute transition focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-[15px] font-semibold
+      transition active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary { @apply btn bg-brand text-white hover:bg-brand-dark; }
+  .btn-ghost { @apply btn bg-paper text-ink hover:bg-line; }
+  .btn-danger { @apply btn bg-danger text-white hover:opacity-90; }
+  .label { @apply mb-1.5 block text-sm font-semibold text-ink-soft; }
+  .icon-btn { @apply inline-flex h-10 w-10 items-center justify-center rounded-full bg-paper text-ink transition hover:bg-line; }
+  /* Fondo con dibujos sutiles, al estilo de las apps de mensajería */
+  .chat-bg {
+    background-color: rgb(var(--c-chat-bg));
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(255,255,255,.35) 0 2px, transparent 3px),
+      radial-gradient(circle at 70% 60%, rgba(255,255,255,.3) 0 3px, transparent 4px),
+      radial-gradient(circle at 45% 85%, rgba(0,0,0,.04) 0 2px, transparent 3px);
+    background-size: 90px 90px, 140px 140px, 110px 110px;
+  }
+}
+
+[data-theme='dark'] .chat-bg { background-image:
+  radial-gradient(circle at 20% 30%, rgba(255,255,255,.05) 0 2px, transparent 3px),
+  radial-gradient(circle at 70% 60%, rgba(255,255,255,.04) 0 3px, transparent 4px),
+  radial-gradient(circle at 45% 85%, rgba(255,255,255,.03) 0 2px, transparent 3px); }
+
+/* Visor de Word: las hojas conservan su aspecto de papel; el fondo gris propio de la librería se sustituye por el de la app. */
+.docx-host .docx-wrapper { background: transparent !important; padding: 12px 0 !important; }
+.docx-host .docx-wrapper > section.docx { margin-bottom: 12px !important; box-shadow: var(--shadow-card) !important; }
+.pptx-host > div { margin: 0 auto 12px; box-shadow: var(--shadow-card); }

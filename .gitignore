@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+*.log
+coverage/
+.DS_Store
+
+# Capacitor / Android
+frontend/android/app/build/
+frontend/android/.gradle/
+frontend/android/local.properties

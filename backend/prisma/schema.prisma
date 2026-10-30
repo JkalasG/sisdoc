@@ -1,0 +1,344 @@
+// Prisma vive SOLO en la capa de infraestructura. El dominio nunca importa @prisma/client.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// MÓDULO: users / auth (mínimo; se amplía en Fase 1)
+// ─────────────────────────────────────────────
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum DeviceStatus {
+  PENDING
+  TRUSTED
+  BLOCKED
+}
+
+model User {
+  id                 String     @id @default(uuid())
+  email              String     @unique // normalizado en minúsculas
+  displayName        String     @map("display_name")
+  passwordHash       String?    @map("password_hash") // null si solo usa Google (slice posterior)
+  status             UserStatus @default(ACTIVE)
+  mustChangePassword Boolean    @default(true) @map("must_change_password")
+  failedAttempts     Int        @default(0) @map("failed_attempts")
+  lockoutLevel       Int        @default(0) @map("lockout_level")
+  lockedUntil        DateTime?  @map("locked_until") @db.Timestamptz(3)
+  passwordChangedAt  DateTime   @default(now()) @map("password_changed_at") @db.Timestamptz(3)
+  lastLoginAt        DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdById        String?    @map("created_by_id")
+
+  sessions        Session[]
+  devices         Device[]
+  passwordHistory PasswordHistory[]
+
+  @@map("users")
+}
+
+model PasswordHistory {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("password_history")
+}
+
+// Cada equipo desde el que alguien inicia sesión. Un dispositivo nuevo queda PENDING
+// hasta que un administrador lo apruebe.
+model Device {
+  id          String       @id @default(uuid())
+  userId      String       @map("user_id")
+  keyHash     String       @map("key_hash") // SHA-256 del identificador guardado en el equipo
+  label       String?
+  status      DeviceStatus @default(PENDING)
+  firstIp     String?      @map("first_ip")
+  lastIp      String?      @map("last_ip")
+  userAgent   String?      @map("user_agent")
+  firstSeenAt DateTime     @default(now()) @map("first_seen_at") @db.Timestamptz(3)
+  lastSeenAt  DateTime     @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  decidedById String?      @map("decided_by_id")
+  decidedAt   DateTime?    @map("decided_at") @db.Timestamptz(3)
+  reason      String?
+
+  user     User      @relation(fields: [userId], references: [id])
+  sessions Session[]
+
+  @@unique([userId, keyHash])
+  @@index([status, firstSeenAt])
+  @@map("devices")
+}
+
+// Una fila por inicio de sesión. La fila misma es la "familia" del refresh token:
+// si un refresh viejo se reutiliza, se revoca la sesión completa.
+model Session {
+  id                String    @id @default(uuid())
+  userId            String    @map("user_id")
+  deviceId          String    @map("device_id")
+  refreshHash       String    @unique @map("refresh_hash") // SHA-256 del refresh vigente
+  prevRefreshHash   String?   @map("prev_refresh_hash") // para detectar reutilización
+  ip                String?
+  userAgent         String?   @map("user_agent")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastActivityAt    DateTime  @default(now()) @map("last_activity_at") @db.Timestamptz(3)
+  absoluteExpiresAt DateTime  @map("absolute_expires_at") @db.Timestamptz(3)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedReason     String?   @map("revoked_reason")
+
+  user   User   @relation(fields: [userId], references: [id])
+  device Device @relation(fields: [deviceId], references: [id])
+
+  @@index([userId, revokedAt])
+  @@index([prevRefreshHash])
+  @@map("sessions")
+}
+
+// Bitácora de seguridad append-only.
+model SecurityEvent {
+  id        String   @id @default(uuid())
+  type      String
+  userId    String?  @map("user_id")
+  deviceId  String?  @map("device_id")
+  sessionId String?  @map("session_id")
+  ip        String?
+  userAgent String?  @map("user_agent")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+  @@map("security_events")
+}
+
+// ─────────────────────────────────────────────
+// MÓDULO: files  (gestión documental)
+// ─────────────────────────────────────────────
+// Convención del módulo: en la BASE DE DATOS todo va en español, sin tildes ni eñes
+// (tablas, columnas, tipos y valores de estado). Los @map hacen la traducción.
+enum DocumentStatus {
+  BORRADOR    @map("borrador")
+  REVISADO    @map("revisado")
+  EN_REVISION @map("en_revision")
+  APROBADO    @map("aprobado")
+  RECHAZADO   @map("rechazado")
+  ARCHIVADO   @map("archivado")
+
+  @@map("estado_documento")
+}
+
+enum ReviewDecision {
+  PENDIENTE           @map("pendiente")
+  APROBADO            @map("aprobado")
+  RECHAZADO           @map("rechazado")
+  CAMBIOS_SOLICITADOS @map("cambios_solicitados")
+
+  @@map("decision_revision")
+}
+
+enum SharePermission {
+  VER       @map("ver")
+  DESCARGAR @map("descargar")
+  EDITAR    @map("editar")
+
+  @@map("permiso_comparticion")
+}
+
+enum DocumentAction {
+  SUBIR               @map("subir")
+  NUEVA_VERSION       @map("nueva_version")
+  VER                 @map("ver")
+  DESCARGAR           @map("descargar")
+  COMPARTIR           @map("compartir")
+  DEJAR_DE_COMPARTIR  @map("dejar_de_compartir")
+  REVISION_SOLICITADA @map("revision_solicitada")
+  REVISION_DECIDIDA   @map("revision_decidida")
+  ESTADO_CAMBIADO     @map("estado_cambiado")
+  ELIMINAR            @map("eliminar")
+  RESTAURAR           @map("restaurar")
+
+  @@map("accion_documento")
+}
+
+enum SiNo {
+  SI @map("si")
+  NO @map("no")
+
+  @@map("si_no")
+}
+
+// Registro maestro de documentos. Los campos de auditoría los llena el sistema, nunca el formulario.
+model Document {
+  id                    String         @id @default(uuid())
+  codigo                String         @unique // lo escribe el usuario al cargar
+  nombreDocumento       String         @map("nombre_documento") // por defecto, el nombre del archivo
+  descripcion           String?
+  estado                DocumentStatus @default(BORRADOR)
+  gestion               Int // año de gestión (se deduce de fecha_creacion)
+  cambios               SiNo           @default(NO) // SI cuando ya tuvo una nueva versión
+  version               Int            @default(1) // número de la versión vigente
+  fechaCreacion         DateTime       @default(now()) @map("fecha_creacion") @db.Timestamptz(3)
+  usuarioCreadorId      String         @map("usuario_creador_id")
+  fechaModificacion     DateTime       @default(now()) @map("fecha_modificacion") @db.Timestamptz(3) // cambios de datos o de estado
+  usuarioModificadorId  String         @map("usuario_modificador_id")
+  fechaActualizacion    DateTime       @default(now()) @map("fecha_actualizacion") @db.Timestamptz(3) // cambios del ARCHIVO (nueva versión)
+  usuarioActualizadorId String         @map("usuario_actualizador_id")
+  revisorId             String?        @map("revisor_id")
+  urlWord               String?        @map("url_word")
+  urlPdf                String?        @map("url_pdf")
+  versionVigenteId      String?        @unique @map("version_vigente_id")
+  eliminadoEn           DateTime?      @map("eliminado_en") @db.Timestamptz(3) // borrado lógico: nunca se pierde la traza
+
+  versions   DocumentVersion[]   @relation("DocumentVersions")
+  shares     DocumentShare[]
+  reviews    DocumentReview[]
+  accessLogs DocumentAccessLog[]
+
+  @@index([usuarioCreadorId])
+  @@index([gestion])
+  @@map("documentos")
+}
+
+// Cada subida de archivo es una VERSIÓN inmutable.
+model DocumentVersion {
+  id             String   @id @default(uuid())
+  documentId     String   @map("documento_id")
+  versionNumber  Int      @map("numero_version")
+  storageKey     String   @map("clave_almacenamiento")
+  fileName       String   @map("nombre_archivo")
+  mimeType       String   @map("tipo_mime")
+  sizeBytes      BigInt   @map("tamano_bytes")
+  checksumSha256 String   @map("suma_sha256") // integridad: detecta alteraciones
+  changeNote     String?  @map("nota_cambio")
+  uploadedById   String   @map("subido_por_id")
+  createdAt      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  document Document         @relation("DocumentVersions", fields: [documentId], references: [id])
+  reviews  DocumentReview[]
+
+  @@unique([documentId, versionNumber])
+  @@map("documento_versiones")
+}
+
+model DocumentShare {
+  id         String          @id @default(uuid())
+  documentId String          @map("documento_id")
+  userId     String          @map("usuario_id")
+  permission SharePermission @map("permiso")
+  sharedById String          @map("compartido_por_id")
+  expiresAt  DateTime?       @map("expira_en") @db.Timestamptz(3)
+  createdAt  DateTime        @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  document Document @relation(fields: [documentId], references: [id])
+
+  @@unique([documentId, userId])
+  @@map("documento_comparticiones")
+}
+
+model DocumentReview {
+  id          String         @id @default(uuid())
+  documentId  String         @map("documento_id")
+  versionId   String         @map("version_id")
+  requestedBy String         @map("solicitado_por_id")
+  reviewerId  String         @map("revisor_id")
+  decision    ReviewDecision @default(PENDIENTE)
+  comment     String?        @map("comentario")
+  requestedAt DateTime       @default(now()) @map("solicitado_en") @db.Timestamptz(3)
+  decidedAt   DateTime?      @map("decidido_en") @db.Timestamptz(3)
+
+  document Document        @relation(fields: [documentId], references: [id])
+  version  DocumentVersion @relation(fields: [versionId], references: [id])
+
+  @@index([reviewerId, decision])
+  @@map("documento_revisiones")
+}
+
+// Bitácora APPEND-ONLY: solo se inserta, jamás se actualiza ni borra.
+model DocumentAccessLog {
+  id         String         @id @default(uuid())
+  documentId String         @map("documento_id")
+  versionId  String?        @map("version_id")
+  userId     String         @map("usuario_id")
+  action     DocumentAction @map("accion")
+  ip         String?
+  userAgent  String?        @map("agente_usuario")
+  channel    String?        @map("canal") // "archivos" | "chat:<conversationId>" → desde dónde se accedió
+  metadata   Json?          @map("metadatos")
+  createdAt  DateTime       @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  document Document @relation(fields: [documentId], references: [id])
+
+  @@index([documentId, createdAt])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("documento_bitacora_accesos")
+}
+
+// ─────────────────────────────────────────────
+// MÓDULO: chat  (mensajería)
+// Nota: documentId NO es FK a propósito; chat solo conoce IDs de documentos
+// y los valida a través de un puerto. Así los módulos quedan desacoplados.
+// ─────────────────────────────────────────────
+enum ConversationType {
+  DIRECT
+  GROUP
+}
+
+model Conversation {
+  id        String           @id @default(uuid())
+  type      ConversationType
+  name      String?
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  members  ConversationMember[]
+  messages Message[]
+
+  @@map("conversations")
+}
+
+model ConversationMember {
+  conversationId String    @map("conversation_id")
+  userId         String    @map("user_id")
+  lastReadAt     DateTime? @map("last_read_at") @db.Timestamptz(3)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@id([conversationId, userId])
+  @@map("conversation_members")
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String   @map("conversation_id")
+  authorId       String   @map("author_id")
+  content        String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  conversation Conversation        @relation(fields: [conversationId], references: [id])
+  attachments  MessageAttachment[]
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+model MessageAttachment {
+  id         String @id @default(uuid())
+  messageId  String @map("message_id")
+  documentId String @map("document_id") // referencia lógica al módulo files
+  versionId  String @map("version_id") // versión exacta adjuntada
+
+  message Message @relation(fields: [messageId], references: [id])
+
+  @@map("message_attachments")
+}

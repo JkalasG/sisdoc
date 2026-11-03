@@ -36,7 +36,7 @@ export function DocumentsAdminPage() {
         ) : (
           <DataTable label="Historial de descargas" rows={downloads.filter((d) => match(`${d.doc} ${d.user}`))} columns={[
             { header: 'Documento', cell: (d: AdminDownload) => <span className="font-semibold">{d.doc}</span> },
-            { header: 'Versión', cell: (d) => `v${d.version}` },
+            { header: 'Versión', cell: (d) => `v${d.version}.0` },
             { header: 'Usuario', cell: (d) => d.user },
             { header: 'IP', cell: (d) => <code className="text-xs">{d.ip}</code> },
             { header: 'Canal', cell: (d) => <Pill tone={d.channel === 'chat' ? 'info' : 'mute'}>{d.channel === 'chat' ? 'Chat' : 'Documentos'}</Pill> },

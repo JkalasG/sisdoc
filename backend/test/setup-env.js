@@ -6,3 +6,4 @@ process.env.JWT_ACCESS_SECRET = 'secreto-solo-para-pruebas-e2e-de-al-menos-32-ca
 process.env.CORS_ORIGIN = 'http://localhost:5173';
 process.env.DISABLE_THROTTLE = 'true';
 process.env.STORAGE_DIR = require('path').join(require('os').tmpdir(), 'sisdoc-e2e-storage');
+process.env.TRUST_PROXY = ''; // los e2e no dependen del .env de desarrollo; cada prueba de IP lo fija a su gusto

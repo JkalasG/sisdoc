@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 230" width="260" height="230">
+<defs><clipPath id="c"><rect width="260" height="230"/></clipPath><linearGradient id="r" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FF5C8A"/><stop offset=".5" stop-color="#8B5CF6"/><stop offset="1" stop-color="#38A1FF"/></linearGradient></defs>
+<g clip-path="url(#c)"><g transform="translate(80 0) scale(1.6)" fill="none" stroke-linecap="round" stroke-width="7">
+    <path d="M12 52C12 30 28 14 56 11" stroke="#FF5C8A"/><path d="M12 52C17 37 30 27 50 26" stroke="#8B5CF6"/><path d="M12 52C19 43 30 39 43 41" stroke="#38A1FF"/></g><text x="130" y="160" font-family="Montserrat, 'Century Gothic', 'Segoe UI', Arial, sans-serif" font-size="58" font-weight="600" fill="#14163A" text-anchor="middle" fill-opacity="1" letter-spacing="12">IRIS</text><rect x="75" y="185" width="110" height="4" rx="2.0" fill="url(#r)"/><text x="130" y="215" font-family="Montserrat, 'Century Gothic', 'Segoe UI', Arial, sans-serif" font-size="11" font-weight="600" fill="#6A6C8C" text-anchor="middle" fill-opacity="1" letter-spacing="2.5">ENVÍA · CONVERSA · REVISA</text></g>
+</svg>

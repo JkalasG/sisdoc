@@ -52,6 +52,21 @@ export interface DeviceRepository {
   touch(id: string, ip: string | undefined, at: Date): Promise<void>;
 }
 
+export const ADMIN_DEVICE_REPOSITORY = Symbol('ADMIN_DEVICE_REPOSITORY');
+
+export interface AdminDeviceRow {
+  id: string; user: string; email: string; label: string; ip: string;
+  firstIp: string; code: string; userAgent: string; // para distinguir un equipo de otro del mismo usuario
+  status: 'PENDING' | 'TRUSTED' | 'BLOCKED'; firstSeen: string; lastSeen: string;
+}
+
+/** Vista de administración sobre los dispositivos de todos los usuarios. */
+export interface AdminDeviceRepository {
+  listAll(): Promise<AdminDeviceRow[]>;
+  /** Aprueba o bloquea; bloquear también revoca sus sesiones. Devuelve false si el dispositivo no existe. */
+  decide(id: string, status: 'TRUSTED' | 'BLOCKED', adminId: string): Promise<boolean>;
+}
+
 export interface PasswordHasher {
   hash(plain: string): Promise<string>;
   verify(hash: string, plain: string): Promise<boolean>;

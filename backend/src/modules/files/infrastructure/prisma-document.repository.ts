@@ -3,13 +3,13 @@ import { Prisma, DocumentVersion as PrismaVersion, Document as PrismaDocument } 
 import { ConflictError } from '../../../shared/domain/domain-error';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
-  Document, DocumentStatus, DocumentVersion, Review, ReviewDecision, SharePermission, tipoUrl, urlDescarga,
+  Document, DocumentStatus, DocumentVersion, Review, ReviewDecision, SharePermission, TipoCambioVersion, tipoUrl, urlDescarga,
 } from '../domain/document';
 import { DocumentRepository, NewDocument, NewVersion, ReviewRecord, VisibleDocument } from '../domain/ports';
 
 const toDoc = (d: PrismaDocument): Document => ({
   id: d.id, codigo: d.codigo, nombreDocumento: d.nombreDocumento, descripcion: d.descripcion ?? undefined,
-  estado: d.estado, gestion: d.gestion, cambios: d.cambios, version: d.version,
+  estado: d.estado, gestion: d.gestion, cambios: d.cambios, version: d.version, versionMenor: d.versionMenor,
   fechaCreacion: d.fechaCreacion, usuarioCreadorId: d.usuarioCreadorId,
   fechaModificacion: d.fechaModificacion, usuarioModificadorId: d.usuarioModificadorId,
   fechaActualizacion: d.fechaActualizacion, usuarioActualizadorId: d.usuarioActualizadorId,
@@ -18,7 +18,7 @@ const toDoc = (d: PrismaDocument): Document => ({
 });
 
 const toVersion = (v: PrismaVersion): DocumentVersion => ({
-  id: v.id, documentId: v.documentId, versionNumber: v.versionNumber, storageKey: v.storageKey,
+  id: v.id, documentId: v.documentId, versionNumber: v.versionNumber, versionMenor: v.versionMenor, storageKey: v.storageKey,
   fileName: v.fileName, mimeType: v.mimeType, sizeBytes: Number(v.sizeBytes),
   checksumSha256: v.checksumSha256, changeNote: v.changeNote ?? undefined,
   uploadedById: v.uploadedById, createdAt: v.createdAt,
@@ -67,19 +67,23 @@ export class PrismaDocumentRepository implements DocumentRepository {
     }
   }
 
-  async addVersion(documentId: string, version: NewVersion) {
+  async addVersion(documentId: string, version: NewVersion, cambio: TipoCambioVersion = 'MAYOR') {
     return this.prisma.$transaction(async (tx) => {
-      const last = await tx.documentVersion.aggregate({ where: { documentId }, _max: { versionNumber: true } });
-      const numero = (last._max.versionNumber ?? 0) + 1;
+      const last = await tx.documentVersion.findFirst({
+        where: { documentId }, orderBy: [{ versionNumber: 'desc' }, { versionMenor: 'desc' }],
+      });
+      const mayorActual = last?.versionNumber ?? 1;
+      const numero = cambio === 'MAYOR' ? mayorActual + 1 : mayorActual;
+      const menor = cambio === 'MAYOR' ? 0 : (last?.versionMenor ?? 0) + 1;
       const v = await tx.documentVersion.create({
-        data: { ...version, documentId, versionNumber: numero, sizeBytes: BigInt(version.sizeBytes) },
-        // @@unique([documentId, versionNumber]) protege ante concurrencia
+        data: { ...version, documentId, versionNumber: numero, versionMenor: menor, sizeBytes: BigInt(version.sizeBytes) },
+        // @@unique([documentId, versionNumber, versionMenor]) protege ante concurrencia
       });
       const ahora = new Date();
       await tx.document.update({
         where: { id: documentId },
         data: {
-          versionVigenteId: v.id, version: numero, cambios: 'SI',
+          versionVigenteId: v.id, version: numero, versionMenor: menor, cambios: 'SI',
           fechaActualizacion: ahora, usuarioActualizadorId: version.uploadedById,
           fechaModificacion: ahora, usuarioModificadorId: version.uploadedById,
           ...urlPatch(v.mimeType, documentId, v.id),
@@ -105,7 +109,7 @@ export class PrismaDocumentRepository implements DocumentRepository {
   }
 
   async listVersions(documentId: string) {
-    const rows = await this.prisma.documentVersion.findMany({ where: { documentId }, orderBy: { versionNumber: 'desc' } });
+    const rows = await this.prisma.documentVersion.findMany({ where: { documentId }, orderBy: [{ versionNumber: 'desc' }, { versionMenor: 'desc' }] });
     return rows.map(toVersion);
   }
 

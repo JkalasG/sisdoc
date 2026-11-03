@@ -27,8 +27,8 @@ export const filesApi = {
   get: (id: string) => http<DocumentDetail>(`/documents/${id}`),
   history: (id: string) => http<AccessLogDTO[]>(`/documents/${id}/history`),
   directory: () => http<UserLite[]>('/directory/users'),
-  openEditorSession: (id: string, mode: 'edit' | 'view' = 'edit') =>
-    http<EditorSessionResponse>(`/documents/${id}/editor-session`, { method: 'POST', ...json({ mode }) }),
+  openEditorSession: (id: string, mode: 'edit' | 'view' = 'edit', versionId?: string) =>
+    http<EditorSessionResponse>(`/documents/${id}/editor-session`, { method: 'POST', ...json({ mode, ...(versionId ? { versionId } : {}) }) }),
 
   /** Alta de documento: solo lo que llena la persona; el resto del registro lo completa el sistema. */
   create: (file: File, f: { codigo: string; nombreDocumento: string; fechaCreacion: string; estado: EstadoInicial }) => {

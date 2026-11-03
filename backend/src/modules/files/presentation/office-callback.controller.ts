@@ -2,8 +2,9 @@ import {
   Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query, Req, StreamableFile,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsArray, IsInt, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Request } from 'express';
+import { clientIp } from '../../../shared/presentation/client-ip';
 import { OfficeEditorUseCase } from '../application/office-editor.use-case';
 
 class OnlyOfficeCallbackDto {
@@ -12,6 +13,16 @@ class OnlyOfficeCallbackDto {
   @IsOptional() @IsString() @MaxLength(2000) url?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) users?: string[];
   @IsOptional() @IsString() @MaxLength(8000) token?: string;
+  // OnlyOffice 8+ envía además estos campos. El ValidationPipe global usa forbidNonWhitelisted, así que si
+  // no se declaran el callback se rechaza con 400 y el editor muestra "No se ha podido guardar el documento".
+  @IsOptional() @IsArray() actions?: unknown[];
+  @IsOptional() @IsObject() history?: Record<string, unknown>;
+  @IsOptional() @IsString() @MaxLength(2000) changesurl?: string;
+  @IsOptional() @IsString() lastsave?: string;
+  @IsOptional() @IsBoolean() notmodified?: boolean;
+  @IsOptional() @IsString() filetype?: string;
+  @IsOptional() @IsInt() forcesavetype?: number;
+  @IsOptional() @IsString() @MaxLength(2000) userdata?: string;
 }
 
 /**
@@ -52,7 +63,7 @@ export class OfficeCallbackController {
       queryToken,
       authHeader,
       body: dto,
-      ip: req.ip,
+      ip: clientIp(req),
       userAgent: req.headers['user-agent'],
     });
   }

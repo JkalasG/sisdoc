@@ -47,6 +47,7 @@ class InMemoryDocuments implements DocumentRepository {
     gestion: 2026,
     cambios: 'NO',
     version: 1,
+    versionMenor: 0,
     fechaCreacion: new Date('2026-10-30T10:00:00Z'),
     usuarioCreadorId: 'ana',
     fechaModificacion: new Date('2026-10-30T10:00:00Z'),
@@ -61,6 +62,7 @@ class InMemoryDocuments implements DocumentRepository {
       id: 'ver-1',
       documentId: 'doc-1',
       versionNumber: 1,
+      versionMenor: 0,
       storageKey: 'documents/doc-1/v1',
       fileName: 'informe.docx',
       mimeType: DOCX_MIME,
@@ -75,17 +77,20 @@ class InMemoryDocuments implements DocumentRepository {
   async createWithFirstVersion(_i: NewDocument): Promise<{ document: Document; version: DocumentVersion }> {
     throw new Error('no usado');
   }
-  async addVersion(documentId: string, v: NewVersion): Promise<DocumentVersion> {
+  async addVersion(documentId: string, v: NewVersion, cambio: 'MAYOR' | 'MENOR' = 'MAYOR'): Promise<DocumentVersion> {
+    const last = this.versions[this.versions.length - 1];
     const next: DocumentVersion = {
       ...v,
       id: `ver-${this.versions.length + 1}`,
       documentId,
-      versionNumber: this.versions.length + 1,
+      versionNumber: cambio === 'MAYOR' ? last.versionNumber + 1 : last.versionNumber,
+      versionMenor: cambio === 'MAYOR' ? 0 : last.versionMenor + 1,
       createdAt: new Date(),
     };
     this.versions.push(next);
     this.doc.versionVigenteId = next.id;
     this.doc.version = next.versionNumber;
+    this.doc.versionMenor = next.versionMenor;
     this.doc.cambios = 'SI';
     return next;
   }
@@ -181,7 +186,7 @@ describe('OfficeEditorUseCase (Edición en tiempo real con OnlyOffice)', () => {
       .rejects.toBeInstanceOf(ForbiddenError);
   });
 
-  it('al recibir callback status=2 de OnlyOffice, descarga el Word editado y crea la Versión 2 inmutable', async () => {
+  it('al recibir callback status=2 de OnlyOffice, descarga el Word editado y crea la versión 1.1 inmutable', async () => {
     const { editor, office, docs, logs } = buildEditorWorld();
     const callbackToken = office.signActionToken(
       { purpose: 'callback', documentId: 'doc-1', versionId: 'ver-1', userId: 'ana' },
@@ -200,8 +205,9 @@ describe('OfficeEditorUseCase (Edición en tiempo real con OnlyOffice)', () => {
       },
     });
 
-    expect(r).toEqual({ error: 0, versionId: 'ver-2', versionNumber: 2 });
-    expect(docs.doc.version).toBe(2);
+    expect(r).toEqual({ error: 0, versionId: 'ver-2', versionNumber: 1, versionMenor: 1, etiqueta: '1.1' });
+    expect(docs.doc.version).toBe(1);
+    expect(docs.doc.versionMenor).toBe(1);
     expect(docs.doc.cambios).toBe('SI');
     expect(docs.versions).toHaveLength(2);
     expect(logs.entries.some((e) => e.action === 'NUEVA_VERSION')).toBe(true);

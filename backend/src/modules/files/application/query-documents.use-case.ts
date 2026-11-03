@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { Document, DocumentVersion, assertAccess } from '../domain/document';
+import { Document, DocumentVersion, assertAccess, etiquetaVersion } from '../domain/document';
 import {
   DOCUMENT_REPOSITORY, DocumentRepository, USER_DIRECTORY, UserDirectory, VisibleDocument,
 } from '../domain/ports';
@@ -8,7 +8,8 @@ const persona = (names: Map<string, string>, id?: string) =>
   id ? { id, nombre: names.get(id) ?? 'Usuario' } : undefined;
 
 const versionDto = (v: DocumentVersion, names: Map<string, string>) => ({
-  id: v.id, versionNumber: v.versionNumber, fileName: v.fileName, mimeType: v.mimeType, sizeBytes: v.sizeBytes,
+  id: v.id, versionNumber: v.versionNumber, versionMenor: v.versionMenor,
+  etiqueta: etiquetaVersion(v.versionNumber, v.versionMenor), fileName: v.fileName, mimeType: v.mimeType, sizeBytes: v.sizeBytes,
   checksumSha256: v.checksumSha256, changeNote: v.changeNote, uploadedById: v.uploadedById,
   uploadedByName: names.get(v.uploadedById) ?? 'Usuario', createdAt: v.createdAt.toISOString(),
 });
@@ -17,7 +18,8 @@ const versionDto = (v: DocumentVersion, names: Map<string, string>) => ({
 function resumen(d: Document, permission: VisibleDocument['permission'], names: Map<string, string>, vigente?: DocumentVersion) {
   return {
     id: d.id, codigo: d.codigo, nombreDocumento: d.nombreDocumento, descripcion: d.descripcion,
-    estado: d.estado, gestion: d.gestion, cambios: d.cambios, version: d.version,
+    estado: d.estado, gestion: d.gestion, cambios: d.cambios, version: d.version, versionMenor: d.versionMenor,
+    versionEtiqueta: etiquetaVersion(d.version, d.versionMenor),
     fechaCreacion: d.fechaCreacion.toISOString(), usuarioCreador: persona(names, d.usuarioCreadorId)!,
     fechaModificacion: d.fechaModificacion.toISOString(), usuarioModificador: persona(names, d.usuarioModificadorId)!,
     fechaActualizacion: d.fechaActualizacion.toISOString(), usuarioActualizador: persona(names, d.usuarioActualizadorId)!,

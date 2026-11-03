@@ -11,7 +11,7 @@ export class FilesDocumentsAdapter implements DocumentsPort {
   async resolveAttachment(input: { documentId: string; versionId?: string; userId: string }): Promise<MessageAttachment> {
     const d = await this.files.getAttachable(input);
     return {
-      documentId: d.documentId, versionId: d.versionId,
+      documentId: d.documentId, versionId: d.versionId, versionNumber: d.versionNumber,
       fileName: d.fileName, mimeType: d.mimeType, sizeBytes: d.sizeBytes,
     };
   }

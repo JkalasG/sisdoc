@@ -10,7 +10,7 @@ export interface AdminUser {
   lastLogin?: string; mustChange: boolean; google: boolean; sessions: number;
 }
 export type DeviceStatus = 'PENDING' | 'TRUSTED' | 'BLOCKED';
-export interface AdminDevice { id: string; user: string; email: string; label: string; ip: string; status: DeviceStatus; firstSeen: string; lastSeen: string }
+export interface AdminDevice { id: string; user: string; email: string; label: string; ip: string; firstIp?: string; code?: string; userAgent?: string; status: DeviceStatus; firstSeen: string; lastSeen: string }
 export interface AdminSession { id: string; user: string; device: string; ip: string; startedAt: string; lastActivity: string; expiresAt: string }
 export type EventType =
   | 'LOGIN_OK' | 'LOGIN_FAIL' | 'ACCOUNT_LOCKED' | 'DEVICE_NEW' | 'DEVICE_APPROVED' | 'DEVICE_BLOCKED'

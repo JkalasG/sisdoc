@@ -135,7 +135,7 @@ describe('Sesión: acceso, refresh y cierre', () => {
     const { agent } = await loggedInUser(app, 'ana@empresa.com');
     const me = await agent.get(`${API}/auth/me`);
     expect(me.status).toBe(200);
-    expect(Object.keys(me.body).sort()).toEqual(['displayName', 'email', 'id', 'mustChangePassword']);
+    expect(Object.keys(me.body).sort()).toEqual(['displayName', 'email', 'id', 'mustChangePassword', 'roles']);
   });
 
   it('refresh emite nuevas cookies y la sesión sigue funcionando', async () => {

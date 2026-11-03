@@ -1,11 +1,11 @@
 import {
-  assertAccess, claveEdicionColaborativa, debeGuardarCallbackOfimatico, Document, gestionDe,
+  assertAccess, claveEdicionColaborativa, debeGuardarCallbackOfimatico, Document, etiquetaVersion, gestionDe, repararNombreArchivo, resolverMime,
   nombreDesdeArchivo, normalizarCodigo, normalizarFechaCreacion, normalizarNombre,
   statusAfterDecision, tipoEditorOfimatico, tipoUrl, urlDescarga,
 } from './document';
 
 const doc = (over: Partial<Document> = {}): Document => ({
-  id: 'd1', codigo: 'X-1', nombreDocumento: 'X', estado: 'BORRADOR', gestion: 2026, cambios: 'NO', version: 1,
+  id: 'd1', codigo: 'X-1', nombreDocumento: 'X', estado: 'BORRADOR', gestion: 2026, cambios: 'NO', version: 1, versionMenor: 0,
   fechaCreacion: new Date(), usuarioCreadorId: 'ana', fechaModificacion: new Date(), usuarioModificadorId: 'ana',
   fechaActualizacion: new Date(), usuarioActualizadorId: 'ana', eliminado: false, ...over,
 });
@@ -99,5 +99,41 @@ describe('Edición en tiempo real (OnlyOffice)', () => {
     expect(debeGuardarCallbackOfimatico(2)).toBe(true);
     expect(debeGuardarCallbackOfimatico(4)).toBe(false);
     expect(debeGuardarCallbackOfimatico(6)).toBe(true);
+  });
+});
+
+describe('Etiqueta de versión', () => {
+  it('une mayor y menor', () => {
+    expect(etiquetaVersion(1, 0)).toBe('1.0');
+    expect(etiquetaVersion(1, 2)).toBe('1.2');
+    expect(etiquetaVersion(2, 0)).toBe('2.0');
+  });
+});
+
+describe('resolverMime', () => {
+  const PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+  it('deduce PowerPoint por la extensión cuando el navegador no informa tipo', () => {
+    expect(resolverMime('Plan.pptx', '')).toBe(PPTX);
+    expect(resolverMime('Plan.PPTX', 'application/octet-stream')).toBe(PPTX);
+    expect(resolverMime('Plan.pptx', 'application/zip')).toBe(PPTX);
+  });
+  it('respeta el tipo informado y no inventa uno para extensiones desconocidas', () => {
+    expect(resolverMime('a.pptx', PPTX)).toBe(PPTX);
+    expect(resolverMime('a.exe', 'application/octet-stream')).toBe('application/octet-stream');
+  });
+});
+
+describe('repararNombreArchivo', () => {
+  it('corrige los acentos que multer lee como latin1', () => {
+    expect(repararNombreArchivo('PresentaciÃ³n bÃ¡sica.pptx')).toBe('Presentación básica.pptx');
+    const leidoPorMulter = (n: string) => Buffer.from(n, 'utf8').toString('latin1');
+    for (const n of ['Año 2026 — informe.docx', 'Gestión ñandú.xlsx', 'ÁÉÍÓÚ üñ.pptx']) {
+      expect(repararNombreArchivo(leidoPorMulter(n))).toBe(n);
+    }
+  });
+  it('no toca nombres que ya están bien', () => {
+    expect(repararNombreArchivo('Informe.docx')).toBe('Informe.docx');
+    expect(repararNombreArchivo('Presentación básica.pptx')).toBe('Presentación básica.pptx');
+    expect(repararNombreArchivo('日本語.docx')).toBe('日本語.docx');
   });
 });

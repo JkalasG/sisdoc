@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { FileText, Plus, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { etiquetaDoc } from '@/shared/api/types';
 import type { DocumentSummary } from '@/shared/api/types';
 import { shortDate } from '@/shared/format';
 import { EmptyState, ErrorNote, Spinner, StatusBadge } from '@/shared/ui/primitives';
@@ -14,24 +15,7 @@ const FILTERS: Array<{ id: Filter; label: string }> = [
   { id: 'shared', label: 'Compartidos conmigo' }, { id: 'review', label: 'En revisión' },
 ];
 
-/** Enlace Word / PDF: descarga por el backend (queda registrada), nunca un enlace directo al archivo. */
-function FileLink({ doc, kind }: { doc: DocumentSummary; kind: 'word' | 'pdf' }) {
-  const url = kind === 'word' ? doc.urlWord : doc.urlPdf;
-  if (!url) return <span className="text-ink-mute">—</span>;
-  const label = kind === 'word' ? 'Word' : 'PDF';
-  return (
-    <button type="button" className="rounded-md bg-brand-light px-2 py-0.5 text-xs font-semibold text-brand hover:underline"
-      aria-label={`Descargar ${label} de ${doc.codigo}`} title={`Descargar ${label}`}
-      onClick={(e) => { e.stopPropagation(); void filesApi.download(doc.id, doc.versionVigente.fileName, filesApi.versionDeUrl(url)); }}>
-      {label}
-    </button>
-  );
-}
-
-const COLUMNS = [
-  'Código', 'Nombre del documento', 'Estado', 'Fecha creación', 'Fecha modificación', 'Usuario creador',
-  'Usuario modificador', 'Versión', 'Fecha actualización', 'Usuario actualizador', 'Revisor', 'Word', 'PDF', 'Gestión', 'Cambios',
-];
+const COLUMNS = ['Código', 'Nombre del documento', 'Estado', 'Fecha modificación', 'Versión'];
 
 export function DocumentsPage() {
   const navigate = useNavigate();
@@ -88,7 +72,7 @@ export function DocumentsPage() {
         )}
         {rows.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1500px] text-left text-sm" aria-label="Registro de documentos">
+            <table className="w-full min-w-[700px] text-left text-sm" aria-label="Registro de documentos">
               <thead>
                 <tr className="border-b border-line bg-paper text-xs uppercase tracking-wide text-ink-soft">
                   {COLUMNS.map((c) => <th key={c} scope="col" className="whitespace-nowrap px-4 py-2.5 font-semibold">{c}</th>)}
@@ -102,20 +86,8 @@ export function DocumentsPage() {
                       <Link to={`/documentos/${d.id}`} className="block truncate font-semibold hover:text-brand" onClick={(e) => e.stopPropagation()}>{d.nombreDocumento}</Link>
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={d.estado} /></td>
-                    <td className="whitespace-nowrap px-4 py-3 text-ink-soft">{shortDate(d.fechaCreacion)}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-soft">{shortDate(d.fechaModificacion)}</td>
-                    <td className="whitespace-nowrap px-4 py-3">{d.usuarioCreador.nombre}</td>
-                    <td className="whitespace-nowrap px-4 py-3">{d.usuarioModificador.nombre}</td>
-                    <td className="px-4 py-3 font-semibold">v{d.version}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-ink-soft">{shortDate(d.fechaActualizacion)}</td>
-                    <td className="whitespace-nowrap px-4 py-3">{d.usuarioActualizador.nombre}</td>
-                    <td className="whitespace-nowrap px-4 py-3">{d.revisor?.nombre ?? <span className="text-ink-mute">—</span>}</td>
-                    <td className="px-4 py-3"><FileLink doc={d} kind="word" /></td>
-                    <td className="px-4 py-3"><FileLink doc={d} kind="pdf" /></td>
-                    <td className="px-4 py-3">{d.gestion}</td>
-                    <td className="px-4 py-3">
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${d.cambios === 'SI' ? 'bg-amber-soft text-amber-ink' : 'bg-paper text-ink-soft'}`}>{d.cambios === 'SI' ? 'Sí' : 'No'}</span>
-                    </td>
+                    <td className="px-4 py-3 font-semibold">v{etiquetaDoc(d)}</td>
                   </tr>
                 ))}
               </tbody>

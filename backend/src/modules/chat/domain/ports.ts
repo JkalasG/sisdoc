@@ -6,6 +6,7 @@ export const DOCUMENTS_PORT = Symbol('DOCUMENTS_PORT');
 export interface MessageAttachment {
   documentId: string;
   versionId: string;
+  versionNumber: number;
   fileName: string;
   mimeType: string;
   sizeBytes: number;
@@ -20,8 +21,23 @@ export interface Message {
   createdAt: Date;
 }
 
+export interface MessageView extends Message {
+  authorName: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  type: 'DIRECT' | 'GROUP';
+  name: string;
+  members: Array<{ id: string; name: string; email: string }>;
+  lastMessage?: { text: string; at: Date };
+  unread: number;
+}
+
 export interface ConversationRepository {
   getMemberIds(conversationId: string): Promise<string[]>;
+  listForUser(userId: string): Promise<ConversationSummary[]>;
+  markRead(conversationId: string, userId: string): Promise<void>;
 }
 
 export interface MessageRepository {
@@ -29,6 +45,8 @@ export interface MessageRepository {
     conversationId: string; authorId: string; content?: string;
     attachments: Array<{ documentId: string; versionId: string }>;
   }): Promise<{ id: string; createdAt: Date }>;
+  listByConversation(conversationId: string): Promise<MessageView[]>;
+  authorName(userId: string): Promise<string>;
 }
 
 export interface DocumentsPort {

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Bell, FileText, Home, KeyRound, LayoutDashboard, LogOut, MessageCircle, Search, ShieldCheck, User, Users } from 'lucide-react';
+import { Bell, FileText, Home, KeyRound, LayoutDashboard, LogOut, MessageCircle, Search, User, Users } from 'lucide-react';
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { isAdmin } from '@/features/admin/components/AdminShell';
@@ -8,6 +8,7 @@ import { useSession } from '@/features/auth/store/session';
 import { chatApi } from '@/features/chat/api/chat.api';
 import { unreadNotices, useSocial } from '@/features/social/store';
 import { config } from '@/shared/config';
+import { BrandLogo } from '@/shared/ui/BrandLogo';
 import { Avatar, Toaster, proto } from '@/shared/ui/primitives';
 import { ThemeSwitch } from '@/shared/ui/ThemeSwitch';
 
@@ -47,15 +48,15 @@ export function AppShell() {
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 bg-surface px-3 shadow-card">
         {/* izquierda */}
         <div className="flex min-w-0 items-center gap-2">
-          <Link to="/inicio" className="flex items-center gap-2" aria-label="SisDoc, ir al inicio">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand text-white"><ShieldCheck className="h-6 w-6" /></span>
-            <span className="hidden text-xl font-extrabold text-brand lg:block">SisDoc</span>
+          <Link to="/inicio" className="flex items-center gap-2" aria-label="Iris, ir al inicio">
+            <span className="lg:hidden"><BrandLogo mark className="h-9" /></span>
+            <span className="hidden lg:block"><BrandLogo className="h-11" /></span>
           </Link>
           {config.useMocks && <span className="rounded-full bg-amber px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-white" title="Sin servidor: datos de demostración">Demo</span>}
           <div className="relative hidden sm:block">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-mute" />
             <input className="w-56 rounded-full bg-paper py-2.5 pl-10 pr-4 text-[15px] placeholder:text-ink-mute focus:outline-none focus:ring-2 focus:ring-brand/30 lg:w-64"
-              placeholder="Buscar en SisDoc" aria-label="Buscar" onFocus={(e) => { e.currentTarget.blur(); proto('La búsqueda global'); }} />
+              placeholder="Buscar en Iris" aria-label="Buscar" onFocus={(e) => { e.currentTarget.blur(); proto('La búsqueda global'); }} />
           </div>
           <button className="icon-btn sm:hidden" aria-label="Buscar" onClick={() => proto('La búsqueda global')}><Search className="h-5 w-5" /></button>
         </div>

@@ -42,7 +42,7 @@ export function FileDropzone({ file, onFile }: { file: File | null; onFile: (f: 
           <div className="flex flex-col items-center gap-1.5 px-4 py-7 text-center">
             <UploadCloud className="h-7 w-7 text-brand" />
             <p className="font-semibold">Arrastra un archivo o haz clic</p>
-            <p className="text-xs text-ink-mute">PDF, Word, Excel, imágenes o texto · máx. {MAX_MB} MB</p>
+            <p className="text-xs text-ink-mute">PDF, Word, Excel, PowerPoint, imágenes o texto · máx. {MAX_MB} MB</p>
           </div>
         )}
         <input ref={input} type="file" className="sr-only" tabIndex={-1} aria-label="Archivo" onChange={(e) => accept(e.target.files?.[0])} />

@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
 import { Request, Response } from 'express';
+import { clientIp } from '../../../shared/presentation/client-ip';
 import { AuthUser, CurrentUser } from '../../../shared/presentation/current-user.decorator';
 import { ChangePasswordUseCase } from '../application/change-password.use-case';
 import { GetCurrentUserUseCase } from '../application/get-current-user.use-case';
@@ -22,7 +23,7 @@ class ChangePasswordDto {
   @IsString() @MinLength(1) @MaxLength(128) newPassword: string;
 }
 
-const meta = (req: Request) => ({ ip: req.ip, userAgent: req.headers['user-agent'] });
+const meta = (req: Request) => ({ ip: clientIp(req), userAgent: req.headers['user-agent'] });
 
 @ApiTags('auth')
 @Controller('auth')

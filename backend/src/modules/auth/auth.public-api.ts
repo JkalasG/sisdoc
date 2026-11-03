@@ -6,3 +6,4 @@ export { AuthModule } from './auth.module';
 export { JwtCookieGuard, AllowWhenPasswordChangePending } from './presentation/jwt-cookie.guard';
 export { AuthCookies } from './presentation/auth-cookies';
 export { AuthenticateRequestUseCase, AuthContext } from './application/authenticate-request.use-case';
+export { PASSWORD_HASHER } from './application/ports';

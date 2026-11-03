@@ -6,6 +6,7 @@ export interface User {
   displayName: string;
   passwordHash: string | null;
   status: UserStatus;
+  roles?: string[];
   mustChangePassword: boolean;
   failedAttempts: number;
   lockoutLevel: number;

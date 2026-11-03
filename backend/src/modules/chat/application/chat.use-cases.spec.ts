@@ -9,6 +9,8 @@ class FakeConversations implements ConversationRepository {
   async getMemberIds(conversationId: string): Promise<string[]> {
     return this.membersByConv[conversationId] ?? [];
   }
+  async listForUser(): Promise<never[]> { return []; }
+  async markRead(): Promise<void> { /* no interviene en estas pruebas */ }
 }
 
 class FakeMessages implements MessageRepository {
@@ -17,6 +19,8 @@ class FakeMessages implements MessageRepository {
     this.saved.push(input);
     return { id: `msg-${this.saved.length}`, createdAt: new Date('2026-03-02T10:00:00Z') };
   }
+  async listByConversation(): Promise<never[]> { return []; }
+  async authorName(): Promise<string> { return 'Autor'; }
 }
 
 class FakeDocuments implements DocumentsPort {
@@ -25,6 +29,7 @@ class FakeDocuments implements DocumentsPort {
     return {
       documentId: input.documentId,
       versionId: input.versionId ?? 'v-1',
+      versionNumber: 1,
       fileName: 'contrato.pdf',
       mimeType: 'application/pdf',
       sizeBytes: 1024,

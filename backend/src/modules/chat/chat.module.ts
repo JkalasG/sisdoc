@@ -1,17 +1,20 @@
 import { Module } from '@nestjs/common';
 import { JoinConversationUseCase } from './application/join-conversation.use-case';
+import { QueryChatUseCase } from './application/query-chat.use-case';
 import { SendMessageUseCase } from './application/send-message.use-case';
 import { CONVERSATION_REPOSITORY, DOCUMENTS_PORT, MESSAGE_REPOSITORY } from './domain/ports';
 import { FilesDocumentsAdapter } from './infrastructure/files-documents.adapter';
 import { PrismaConversationRepository, PrismaMessageRepository } from './infrastructure/prisma-chat.repositories';
+import { ChatController } from './presentation/chat.controller';
 import { ChatGateway } from './presentation/chat.gateway';
 import { AuthModule } from '../auth/auth.public-api';
 import { FilesModule } from '../files/files.public-api';
 
 @Module({
   imports: [FilesModule, AuthModule], // files expone DOCUMENTS_API; auth, la sesión
+  controllers: [ChatController],
   providers: [
-    SendMessageUseCase, JoinConversationUseCase, ChatGateway,
+    SendMessageUseCase, JoinConversationUseCase, QueryChatUseCase, ChatGateway,
     { provide: CONVERSATION_REPOSITORY, useClass: PrismaConversationRepository },
     { provide: MESSAGE_REPOSITORY, useClass: PrismaMessageRepository },
     { provide: DOCUMENTS_PORT, useClass: FilesDocumentsAdapter },

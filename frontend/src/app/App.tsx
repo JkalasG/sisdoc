@@ -6,6 +6,7 @@ import { RequireAuth } from '@/features/auth/components/RequireAuth';
 import { useSession } from '@/features/auth/store/session';
 import { ChatPage } from '@/features/chat/pages/ChatPage';
 import { DocumentDetailPage } from '@/features/files/pages/DocumentDetailPage';
+import { DocumentEditorPage } from '@/features/files/pages/DocumentEditorPage';
 import { DocumentsPage } from '@/features/files/pages/DocumentsPage';
 import { FeedPage } from '@/features/social/pages/FeedPage';
 import { GroupPage } from '@/features/social/pages/GroupPage';
@@ -53,6 +54,7 @@ export function App() {
             <Route path="/grupos/:id" element={<GroupPage />} />
             <Route path="/documentos" element={<DocumentsPage />} />
             <Route path="/documentos/:id" element={<DocumentDetailPage />} />
+            <Route path="/documentos/:id/editor" element={<DocumentEditorPage />} />
             <Route path="/mensajes" element={<ChatPage />} />
             <Route path="/mensajes/:id" element={<ChatPage />} />
             <Route path="/notificaciones" element={<NotificationsPage />} />

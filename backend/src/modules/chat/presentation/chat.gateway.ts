@@ -1,10 +1,13 @@
 import {
   ConnectedSocket, MessageBody, OnGatewayConnection, SubscribeMessage, WebSocketGateway, WebSocketServer,
 } from '@nestjs/websockets';
+import { OnEvent } from '@nestjs/event-emitter';
 import { Server, Socket } from 'socket.io';
 import { AuthCookies, AuthenticateRequestUseCase } from '../../auth/auth.public-api';
 import { JoinConversationUseCase } from '../application/join-conversation.use-case';
+import { QueryChatUseCase } from '../application/query-chat.use-case';
 import { SendMessageUseCase } from '../application/send-message.use-case';
+import { Message } from '../domain/ports';
 
 @WebSocketGateway({
   namespace: 'chat',
@@ -16,6 +19,7 @@ export class ChatGateway implements OnGatewayConnection {
   constructor(
     private readonly sendMessage: SendMessageUseCase,
     private readonly joinConversation: JoinConversationUseCase,
+    private readonly query: QueryChatUseCase,
     private readonly authenticate: AuthenticateRequestUseCase,
     private readonly cookies: AuthCookies,
   ) {}
@@ -44,9 +48,14 @@ export class ChatGateway implements OnGatewayConnection {
       client.disconnect(true);
       return;
     }
-    const message = await this.sendMessage.execute({ ...body, authorId: client.data.userId });
-    this.server.to(`conversation:${body.conversationId}`).emit('message:new', message);
-    return message; // ack al emisor
+    // La difusión a la sala la hace onMessageSent, así también cubre el envío por REST.
+    return this.sendMessage.execute({ ...body, authorId: client.data.userId }); // ack al emisor
+  }
+
+  @OnEvent('chat.message.sent')
+  async onMessageSent(message: Message) {
+    const dto = await this.query.withAuthor(message);
+    this.server.to(`conversation:${message.conversationId}`).emit('message:new', dto);
   }
 
   @SubscribeMessage('conversation:join')

@@ -28,6 +28,7 @@ model User {
   displayName        String     @map("display_name")
   passwordHash       String?    @map("password_hash") // null si solo usa Google (slice posterior)
   status             UserStatus @default(ACTIVE)
+  roles              String[]   @default([]) // ej. ["ADMIN"]
   mustChangePassword Boolean    @default(true) @map("must_change_password")
   failedAttempts     Int        @default(0) @map("failed_attempts")
   lockoutLevel       Int        @default(0) @map("lockout_level")
@@ -187,7 +188,8 @@ model Document {
   estado                DocumentStatus @default(BORRADOR)
   gestion               Int // año de gestión (se deduce de fecha_creacion)
   cambios               SiNo           @default(NO) // SI cuando ya tuvo una nueva versión
-  version               Int            @default(1) // número de la versión vigente
+  version               Int            @default(1) // versión mayor vigente (1, 2, 3…)
+  versionMenor          Int            @default(0) @map("version_menor") // revisiones en línea: 1.1, 1.2…
   fechaCreacion         DateTime       @default(now()) @map("fecha_creacion") @db.Timestamptz(3)
   usuarioCreadorId      String         @map("usuario_creador_id")
   fechaModificacion     DateTime       @default(now()) @map("fecha_modificacion") @db.Timestamptz(3) // cambios de datos o de estado
@@ -214,7 +216,8 @@ model Document {
 model DocumentVersion {
   id             String   @id @default(uuid())
   documentId     String   @map("documento_id")
-  versionNumber  Int      @map("numero_version")
+  versionNumber  Int      @map("numero_version") // versión mayor
+  versionMenor   Int      @default(0) @map("numero_version_menor") // 0 = archivo subido; 1, 2… = ediciones en línea
   storageKey     String   @map("clave_almacenamiento")
   fileName       String   @map("nombre_archivo")
   mimeType       String   @map("tipo_mime")
@@ -227,7 +230,7 @@ model DocumentVersion {
   document Document         @relation("DocumentVersions", fields: [documentId], references: [id])
   reviews  DocumentReview[]
 
-  @@unique([documentId, versionNumber])
+  @@unique([documentId, versionNumber, versionMenor])
   @@map("documento_versiones")
 }
 

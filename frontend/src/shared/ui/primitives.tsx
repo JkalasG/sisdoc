@@ -117,6 +117,17 @@ export const Spinner = ({ className = 'h-5 w-5' }: { className?: string }) => (
   <Loader2 className={`animate-spin ${className}`} aria-label="Cargando" />
 );
 
+/** Cargador con forma de hoja de documento: una línea recorre las "líneas de texto" mientras se prepara. */
+export const DocLoader = ({ className = 'h-16 w-14' }: { className?: string }) => (
+  <span className={`relative inline-block overflow-hidden rounded-md border-2 border-brand bg-surface ${className}`} role="status" aria-label="Cargando documento">
+    <span className="absolute left-2 right-2 top-[22%] h-0.5 rounded bg-brand/30" />
+    <span className="absolute left-2 right-5 top-[40%] h-0.5 rounded bg-brand/30" />
+    <span className="absolute left-2 right-2 top-[58%] h-0.5 rounded bg-brand/30" />
+    <span className="absolute left-2 right-7 top-[76%] h-0.5 rounded bg-brand/30" />
+    <span className="absolute inset-x-0 h-1 animate-scan bg-brand/70 shadow-[0_0_8px_2px] shadow-brand/40" />
+  </span>
+);
+
 export function EmptyState({ icon, title, hint, action }: { icon: ReactNode; title: string; hint?: string; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">

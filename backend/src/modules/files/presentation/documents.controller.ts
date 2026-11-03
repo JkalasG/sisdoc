@@ -7,6 +7,7 @@ import { ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { IsDateString, IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ValidationError } from '../../../shared/domain/domain-error';
+import { clientIp } from '../../../shared/presentation/client-ip';
 import { AuthUser, CurrentUser } from '../../../shared/presentation/current-user.decorator';
 import { JwtCookieGuard } from '../../auth/auth.public-api';
 import { DownloadDocumentUseCase } from '../application/download-document.use-case';
@@ -15,6 +16,7 @@ import { OfficeEditorUseCase } from '../application/office-editor.use-case';
 import { QueryDocumentsUseCase } from '../application/query-documents.use-case';
 import { ReviewDocumentUseCase } from '../application/review-document.use-case';
 import { UploadDocumentUseCase } from '../application/upload-document.use-case';
+import { repararNombreArchivo } from '../domain/document';
 
 /** Lo único que llena la persona al cargar; el resto del registro lo completa el sistema. */
 class CreateDocumentDto {
@@ -37,10 +39,12 @@ class DecideReviewDto {
 }
 class OpenEditorSessionDto {
   @IsOptional() @IsIn(['edit', 'view']) mode?: 'edit' | 'view';
+  /** Versión a mostrar (solo lectura); si falta, se abre la vigente. */
+  @IsOptional() @IsUUID() versionId?: string;
 }
 
-const meta = (req: Request) => ({ ip: req.ip, userAgent: req.headers['user-agent'] });
-const fileOf = (f: Express.Multer.File) => ({ buffer: f.buffer, originalName: f.originalname, mimeType: f.mimetype });
+const meta = (req: Request) => ({ ip: clientIp(req), userAgent: req.headers['user-agent'] });
+const fileOf = (f: Express.Multer.File) => ({ buffer: f.buffer, originalName: repararNombreArchivo(f.originalname), mimeType: f.mimetype });
 
 @ApiTags('documents')
 @UseGuards(JwtCookieGuard)
@@ -128,6 +132,6 @@ export class DocumentsController {
     @Body() dto: OpenEditorSessionDto,
     @Req() req: Request,
   ) {
-    return this.officeEditor.openSession({ documentId: id, userId: u.id, mode: dto.mode, ...meta(req) });
+    return this.officeEditor.openSession({ documentId: id, userId: u.id, mode: dto.mode, versionId: dto.versionId, ...meta(req) });
   }
 }

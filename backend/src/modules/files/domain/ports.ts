@@ -1,6 +1,6 @@
 import { Readable } from 'stream';
 import {
-  AccessLogEntry, Document, DocumentStatus, DocumentVersion, EstadoInicial, Review, ReviewDecision, SharePermission,
+  AccessLogEntry, Document, TipoCambioVersion, DocumentStatus, DocumentVersion, EstadoInicial, Review, ReviewDecision, SharePermission,
 } from './document';
 
 export const DOCUMENT_REPOSITORY = Symbol('DOCUMENT_REPOSITORY');
@@ -9,7 +9,7 @@ export const FILE_STORAGE = Symbol('FILE_STORAGE');
 export const USER_DIRECTORY = Symbol('USER_DIRECTORY');
 export const OFFICE_EDITOR_PORT = Symbol('OFFICE_EDITOR_PORT');
 
-export type NewVersion = Omit<DocumentVersion, 'id' | 'versionNumber' | 'createdAt' | 'documentId'>;
+export type NewVersion = Omit<DocumentVersion, 'id' | 'versionNumber' | 'versionMenor' | 'createdAt' | 'documentId'>;
 
 export interface NewDocument {
   codigo: string;
@@ -31,8 +31,8 @@ export interface DocumentRepository {
   /** Crea documento + versión 1 en una sola transacción. Lanza ConflictError si el código ya existe. */
   createWithFirstVersion(input: NewDocument): Promise<{ document: Document; version: DocumentVersion }>;
 
-  /** Calcula el siguiente número de versión dentro de la transacción (evita carreras). */
-  addVersion(documentId: string, version: NewVersion): Promise<DocumentVersion>;
+  /** Calcula el siguiente número de versión (MAYOR → N+1.0, MENOR → N.m+1) dentro de la transacción. */
+  addVersion(documentId: string, version: NewVersion, cambio?: TipoCambioVersion): Promise<DocumentVersion>;
 
   findById(id: string): Promise<Document | null>;
   findByCodigo(codigo: string): Promise<Document | null>;

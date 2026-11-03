@@ -1,6 +1,8 @@
 import { KeyRound, Plus, ShieldOff, Unlock, UserCheck } from 'lucide-react';
 import { FormEvent, useState } from 'react';
+import { config } from '@/shared/config';
 import { Avatar, Modal, proto } from '@/shared/ui/primitives';
+import { UsersRealPage } from './UsersRealPage';
 import type { AdminUser, Role, UserStatus } from '../data';
 import { Btn, DataTable, PageHeader, Panel, Pill, SearchBox, Tabs, When, type Tone } from '../components/ui';
 import { useAdmin } from '../store';
@@ -9,7 +11,12 @@ const STATUS_TONE: Record<UserStatus, Tone> = { Activo: 'ok', Deshabilitado: 'mu
 const ROLES: Role[] = ['Usuario', 'Moderador', 'Auditor', 'Administrador'];
 type Filter = 'all' | UserStatus;
 
+/** Con backend real administra usuarios de verdad; en modo demo (sin servidor) usa la maqueta en memoria. */
 export function UsersPage() {
+  return config.useMocks ? <DemoUsersPage /> : <UsersRealPage />;
+}
+
+function DemoUsersPage() {
   const { users, toggleUser, unlockUser, resetPassword, sections } = useAdmin();
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<Filter>('all');

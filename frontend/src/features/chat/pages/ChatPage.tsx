@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { filesApi } from '@/features/files/api/files.api';
 import { useSession } from '@/features/auth/store/session';
 import { ApiError } from '@/shared/api/http';
+import { etiquetaDoc } from '@/shared/api/types';
 import type { AttachmentDTO, ConversationDTO, MessageDTO } from '@/shared/api/types';
 import { dayLabel, formatBytes, shortTime } from '@/shared/format';
 import { Avatar, ErrorNote, FileTypeIcon, Modal, Spinner, proto } from '@/shared/ui/primitives';
@@ -51,7 +52,7 @@ export function ChatPage() {
           ) : (
             <div className="m-auto flex max-w-sm flex-col items-center gap-3 px-6 text-center">
               <span className="flex h-20 w-20 items-center justify-center rounded-full bg-ok-soft text-chat-accent"><MessageCircle className="h-10 w-10" /></span>
-              <h2 className="text-2xl font-light">SisDoc Mensajes</h2>
+              <h2 className="text-2xl font-light">Iris Mensajes</h2>
               <p className="text-sm text-ink-soft">Envía mensajes y documentos a tus compañeros. Cada archivo compartido queda registrado con su versión y su historial de descargas.</p>
             </div>
           )}
@@ -172,7 +173,7 @@ function AttachPicker({ onPick, onClose, chosen }: { onPick: (d: { documentId: s
           <li key={d.id}>
             <button className="flex w-full items-center gap-3 rounded-lg p-2.5 text-left hover:bg-paper" onClick={() => onPick({ documentId: d.id, title: d.nombreDocumento })}>
               <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-light text-brand"><FileTypeIcon mime={d.versionVigente.mimeType} className="h-5 w-5" /></span>
-              <span className="min-w-0"><span className="block truncate text-sm font-semibold">{d.nombreDocumento}</span><span className="text-xs text-ink-mute">{d.codigo} · v{d.version} · {formatBytes(d.versionVigente.sizeBytes)}</span></span>
+              <span className="min-w-0"><span className="block truncate text-sm font-semibold">{d.nombreDocumento}</span><span className="text-xs text-ink-mute">{d.codigo} · v{etiquetaDoc(d)} · {formatBytes(d.versionVigente.sizeBytes)}</span></span>
             </button>
           </li>
         ))}

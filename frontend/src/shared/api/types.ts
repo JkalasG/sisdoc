@@ -16,14 +16,14 @@ export type EstadoInicial = Extract<DocStatus, 'BORRADOR' | 'REVISADO'>;
 export type MyPermission = 'PROPIETARIO' | 'EDITAR' | 'DESCARGAR' | 'VER';
 
 export interface VersionDTO {
-  id: string; versionNumber: number; fileName: string; mimeType: string; sizeBytes: number;
+  id: string; versionNumber: number; versionMenor?: number; etiqueta?: string; fileName: string; mimeType: string; sizeBytes: number;
   checksumSha256: string; changeNote?: string; uploadedById: string; uploadedByName: string; createdAt: string;
 }
 export interface Persona { id: string; nombre: string }
 /** Registro maestro del documento (campos en español, igual que la base de datos). */
 export interface DocumentSummary {
   id: string; codigo: string; nombreDocumento: string; descripcion?: string; estado: DocStatus;
-  gestion: number; cambios: 'SI' | 'NO'; version: number;
+  gestion: number; cambios: 'SI' | 'NO'; version: number; versionMenor?: number; versionEtiqueta?: string;
   fechaCreacion: string; usuarioCreador: Persona;
   fechaModificacion: string; usuarioModificador: Persona;
   fechaActualizacion: string; usuarioActualizador: Persona;
@@ -93,3 +93,9 @@ export interface ConversationDTO {
   // Solo prototipo:
   pinned?: boolean; muted?: boolean; online?: boolean; lastSeen?: string;
 }
+
+/** "1.0" (subida) · "1.1", "1.2" (ediciones en línea) · "2.0" (archivo nuevo). */
+export const etiquetaDoc = (d: { version: number; versionMenor?: number; versionEtiqueta?: string }) =>
+  d.versionEtiqueta ?? `${d.version}.${d.versionMenor ?? 0}`;
+export const etiquetaVersion = (v: { versionNumber: number; versionMenor?: number; etiqueta?: string }) =>
+  v.etiqueta ?? `${v.versionNumber}.${v.versionMenor ?? 0}`;

@@ -1,11 +1,12 @@
 import {
   Activity, Building2, ChevronRight, FileText, LayoutDashboard, LogOut, Menu, MonitorSmartphone, Network,
-  ScrollText, ShieldCheck, Users, X,
+  ScrollText, Users, X,
 } from 'lucide-react';
 import { ReactNode, useEffect, useState } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '@/features/auth/store/session';
 import { config } from '@/shared/config';
+import { BrandLogo } from '@/shared/ui/BrandLogo';
 import { Avatar, Toaster } from '@/shared/ui/primitives';
 import { ThemeSwitch } from '@/shared/ui/ThemeSwitch';
 import { useAdmin } from '../store';
@@ -49,8 +50,8 @@ export function AdminShell() {
   const sidebar = (
     <nav className="flex h-full flex-col bg-surface text-ink-soft shadow-card" aria-label="Menú de administración">
       <div className="flex h-14 items-center gap-3 border-b border-line px-5">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand text-white"><ShieldCheck className="h-5 w-5" /></span>
-        <div className="leading-tight"><p className="text-xl font-extrabold text-brand">SisDoc</p><p className="text-[11px] uppercase tracking-widest text-ink-mute">Administración</p></div>
+        <BrandLogo className="h-9" />
+        <p className="text-[11px] uppercase tracking-widest text-ink-mute">Administración</p>
       </div>
       <div className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
         {groups.map((g) => (

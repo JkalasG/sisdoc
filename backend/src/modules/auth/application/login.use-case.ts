@@ -27,7 +27,7 @@ export type LoginResult =
       refreshToken: string;
       deviceKey: string;
       sessionExpiresAt: Date;
-      user: { id: string; email: string; displayName: string; mustChangePassword: boolean };
+      user: { id: string; email: string; displayName: string; mustChangePassword: boolean; roles: string[] };
     }
   | { kind: 'DEVICE_PENDING'; deviceKey: string };
 
@@ -126,7 +126,7 @@ export class LoginUseCase {
       refreshToken,
       deviceKey,
       sessionExpiresAt: session.absoluteExpiresAt,
-      user: { id: user.id, email: user.email, displayName: user.displayName, mustChangePassword: user.mustChangePassword },
+      user: { id: user.id, email: user.email, displayName: user.displayName, mustChangePassword: user.mustChangePassword, roles: user.roles ?? [] },
     };
   }
 }

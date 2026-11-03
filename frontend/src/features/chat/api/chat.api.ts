@@ -2,8 +2,6 @@ import { http, json } from '@/shared/api/http';
 import { config } from '@/shared/config';
 import type { ConversationDTO, MessageDTO } from '@/shared/api/types';
 
-// ⚠ Hoy el backend de chat solo expone el socket (message:send). PENDIENTES en backend:
-//   GET /conversations · GET /conversations/:id/messages · POST /conversations/:id/messages
 export const chatApi = {
   conversations: () => http<ConversationDTO[]>('/conversations'),
   messages: (id: string) => http<MessageDTO[]>(`/conversations/${id}/messages`),

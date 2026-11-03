@@ -10,6 +10,6 @@ export class GetCurrentUserUseCase {
     const u = await this.users.findById(userId);
     if (!u || u.status !== 'ACTIVE') throw new UnauthenticatedError();
     // Nunca se devuelve passwordHash ni contadores internos.
-    return { id: u.id, email: u.email, displayName: u.displayName, mustChangePassword: u.mustChangePassword };
+    return { id: u.id, email: u.email, displayName: u.displayName, mustChangePassword: u.mustChangePassword, roles: u.roles ?? [] };
   }
 }

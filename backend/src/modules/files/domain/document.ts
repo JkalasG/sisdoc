@@ -15,6 +15,7 @@ export interface DocumentVersion {
   id: string;
   documentId: string;
   versionNumber: number;
+  versionMenor: number;
   storageKey: string;
   fileName: string;
   mimeType: string;
@@ -24,6 +25,12 @@ export interface DocumentVersion {
   uploadedById: string;
   createdAt: Date;
 }
+
+/** Etiqueta legible de versión: 1.0 (subida), 1.1, 1.2 (ediciones en línea), 2.0 (nuevo archivo). */
+export const etiquetaVersion = (mayor: number, menor: number): string => `${mayor}.${menor}`;
+
+/** MAYOR = se subió un archivo nuevo; MENOR = edición en línea sobre la versión vigente. */
+export type TipoCambioVersion = 'MAYOR' | 'MENOR';
 
 /** Registro maestro del documento. Los campos de auditoría los llena el sistema, no el formulario. */
 export interface Document {
@@ -35,6 +42,7 @@ export interface Document {
   gestion: number;
   cambios: SiNo;
   version: number;
+  versionMenor: number;
   fechaCreacion: Date;
   usuarioCreadorId: string;
   fechaModificacion: Date;
@@ -144,6 +152,34 @@ export function normalizarFechaCreacion(raw: Date | undefined, ahora: Date): Dat
   if (Number.isNaN(raw.getTime())) throw new ValidationError('La fecha de creación no es válida');
   if (raw.getTime() > ahora.getTime() + 5 * 60_000) throw new ValidationError('La fecha de creación no puede ser futura');
   return raw;
+}
+
+/**
+ * multer/busboy leen el nombre del archivo como latin1 aunque el navegador lo envía en UTF-8:
+ * "Presentación básica.pptx" llega como "PresentaciÃ³n bÃ¡sica.pptx". Se revierte esa lectura.
+ * Si el nombre ya es correcto (tiene letras fuera de latin1 o no es UTF-8 válido al reinterpretarlo), se deja igual.
+ */
+export function repararNombreArchivo(nombre: string): string {
+  if (/[^\u0000-ÿ]/.test(nombre)) return nombre.normalize('NFC');
+  const reinterpretado = Buffer.from(nombre, 'latin1').toString('utf8');
+  return (reinterpretado.includes('�') ? nombre : reinterpretado).normalize('NFC');
+}
+
+const MIME_POR_EXTENSION: Record<string, string> = {
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', txt: 'text/plain',
+};
+/**
+ * Algunos navegadores/equipos mandan Office (p. ej. .pptx) sin tipo o como application/octet-stream.
+ * En ese caso se deduce el tipo por la extensión; si el navegador sí informa un tipo, se respeta.
+ */
+export function resolverMime(nombreArchivo: string, mimeInformado: string | undefined): string {
+  const m = (mimeInformado ?? '').toLowerCase().trim();
+  if (m && m !== 'application/octet-stream' && m !== 'application/zip' && m !== 'application/x-zip-compressed') return m;
+  const ext = nombreArchivo.split('.').pop()?.toLowerCase() ?? '';
+  return MIME_POR_EXTENSION[ext] ?? m;
 }
 
 export type TipoUrl = 'word' | 'pdf';

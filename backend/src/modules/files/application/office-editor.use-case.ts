@@ -1,7 +1,7 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../../shared/domain/domain-error';
 import {
-  assertAccess, claveEdicionColaborativa, debeGuardarCallbackOfimatico, hasPermission, tipoEditorOfimatico,
+  assertAccess, claveEdicionColaborativa, debeGuardarCallbackOfimatico, etiquetaVersion, hasPermission, tipoEditorOfimatico,
 } from '../domain/document';
 import {
   ACCESS_LOG_REPOSITORY, AccessLogRepository, DOCUMENT_REPOSITORY, DocumentRepository,
@@ -22,6 +22,8 @@ export interface OnlyOfficeCallbackInput {
 
 @Injectable()
 export class OfficeEditorUseCase {
+  private readonly log = new Logger('OfficeEditor'); // diagnóstico: grep "[OfficeEditor]" en la consola del backend
+
   constructor(
     @Inject(DOCUMENT_REPOSITORY) private readonly docs: DocumentRepository,
     @Inject(ACCESS_LOG_REPOSITORY) private readonly logs: AccessLogRepository,
@@ -36,15 +38,20 @@ export class OfficeEditorUseCase {
    * Todos los usuarios que abren la misma versión vigente comparten la misma clave colaborativa (`document.key`).
    */
   async openSession(input: {
-    documentId: string; userId: string; mode?: 'edit' | 'view'; ip?: string; userAgent?: string;
+    documentId: string; userId: string; mode?: 'edit' | 'view'; versionId?: string; ip?: string; userAgent?: string;
   }) {
     const doc = await this.docs.findById(input.documentId);
     const share = doc ? await this.docs.getSharePermission(doc.id, input.userId) : null;
     assertAccess(doc, input.userId, share, 'VER'); // 404 si no puede ni verlo
 
     if (!doc.versionVigenteId) throw new NotFoundError('Versión vigente');
-    const version = await this.docs.findVersion(doc.id, doc.versionVigenteId);
-    if (!version) throw new NotFoundError('Versión vigente');
+    // Una versión anterior es inmutable: solo se puede ver, nunca editar.
+    const verAnterior = Boolean(input.versionId && input.versionId !== doc.versionVigenteId);
+    if (verAnterior && input.mode === 'edit') {
+      throw new ValidationError('Solo la versión vigente se puede editar; las anteriores son de solo lectura');
+    }
+    const version = await this.docs.findVersion(doc.id, input.versionId ?? doc.versionVigenteId);
+    if (!version) throw new NotFoundError('Versión');
 
     const info = tipoEditorOfimatico(version.mimeType);
     if (!info) {
@@ -59,7 +66,7 @@ export class OfficeEditorUseCase {
       throw new ValidationError('Este tipo de archivo solo admite visualización, no edición en línea');
     }
 
-    const canEdit = input.mode !== 'view' && tienePermisoEditar && info.editable;
+    const canEdit = input.mode !== 'view' && !verAnterior && tienePermisoEditar && info.editable;
     const modo = canEdit ? ('EDICION' as const) : ('LECTURA' as const);
 
     const fileFetchToken = this.office.signActionToken(
@@ -115,6 +122,8 @@ export class OfficeEditorUseCase {
       metadata: { modo, versionNumber: version.versionNumber },
     });
 
+    this.log.log(`abrir sesión doc=${doc.id} versión=${version.versionNumber}.${version.versionMenor} modo=${modo} usuario=${input.userId} key=${configPayload.document.key}`);
+
     return {
       documentServerUrl: this.office.serverPublicUrl,
       scriptUrl: `${this.office.serverPublicUrl}/web-apps/apps/api/documents/api.js`,
@@ -140,6 +149,7 @@ export class OfficeEditorUseCase {
     const version = await this.docs.findVersion(doc.id, claims.versionId);
     if (!version) throw new NotFoundError('Versión');
 
+    this.log.log(`editor descarga archivo doc=${doc.id} versión=${version.versionNumber}.${version.versionMenor} (${version.sizeBytes} bytes)`);
     return {
       stream: await this.storage.read(version.storageKey),
       fileName: version.fileName,
@@ -160,6 +170,7 @@ export class OfficeEditorUseCase {
     ip?: string;
     userAgent?: string;
   }) {
+    this.log.log(`callback doc=${input.documentId} status=${input.body.status} key=${input.body.key} usuarios=${JSON.stringify(input.body.users ?? [])} url=${input.body.url ? 'sí' : 'no'}`);
     if (!input.queryToken) throw new ForbiddenError('Falta el token de callback');
     const claims = this.office.verifyActionToken(input.queryToken);
     if (!claims || claims.purpose !== 'callback' || claims.documentId !== input.documentId) {
@@ -169,11 +180,13 @@ export class OfficeEditorUseCase {
     const bearer = input.authHeader?.startsWith('Bearer ') ? input.authHeader.slice(7).trim() : undefined;
     const rawJwt = input.body.token ?? bearer;
     if (!rawJwt || !this.office.verifyCallbackJwt(rawJwt)) {
+      this.log.warn(`callback rechazado: firma JWT inválida (revisa ONLYOFFICE_JWT_SECRET en backend/.env y docker-compose)`);
       throw new ForbiddenError('Firma JWT del servidor OnlyOffice inválida');
     }
 
     // Si el estado es 1 (usuarios conectados) o 4 (cerrado sin cambios), respondemos éxito sin crear versión
     if (!debeGuardarCallbackOfimatico(input.body.status)) {
+      this.log.log(`callback status=${input.body.status}: no requiere guardar`);
       return { error: 0 };
     }
 
@@ -189,7 +202,9 @@ export class OfficeEditorUseCase {
     const baseVersion = await this.docs.findVersion(doc.id, claims.versionId);
     if (!baseVersion) throw new NotFoundError('Versión base');
 
+    this.log.log(`descargando archivo editado desde ${input.body.url}`);
     const editedBuffer = await this.office.fetchEditedFile(input.body.url);
+    this.log.log(`archivo editado descargado (${editedBuffer.length} bytes)`);
     const changeNote = input.body.status === 6
       ? 'Guardado en vivo (OnlyOffice)'
       : 'Edición colaborativa en tiempo real (OnlyOffice)';
@@ -203,11 +218,16 @@ export class OfficeEditorUseCase {
         mimeType: baseVersion.mimeType,
       },
       changeNote,
+      cambio: 'MENOR', // la edición en línea genera 1.1, 1.2…
       ip: input.ip,
       userAgent: input.userAgent ?? 'OnlyOffice-DocumentServer',
     });
 
-    return { error: 0, versionId: createdVersion.id, versionNumber: createdVersion.versionNumber };
+    this.log.log(`versión creada ${createdVersion.versionNumber}.${createdVersion.versionMenor} doc=${doc.id}`);
+    return {
+      error: 0, versionId: createdVersion.id, versionNumber: createdVersion.versionNumber,
+      versionMenor: createdVersion.versionMenor, etiqueta: etiquetaVersion(createdVersion.versionNumber, createdVersion.versionMenor),
+    };
   }
 }
 

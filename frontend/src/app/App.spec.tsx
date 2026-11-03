@@ -183,15 +183,13 @@ describe('Documentos', () => {
     return user;
   }
 
-  it('lista los documentos como registro maestro, con todas sus columnas', async () => {
+  it('lista los documentos como registro maestro, solo con las columnas esenciales', async () => {
     await inDocs();
     expect(await screen.findByText('Contrato de servicios 2026', undefined, T)).toBeInTheDocument();
     expect(screen.getByText('Presupuesto trimestral Q2')).toBeInTheDocument();
     const tabla = screen.getByRole('table', { name: 'Registro de documentos' });
-    for (const c of ['Código', 'Nombre del documento', 'Fecha creación', 'Fecha modificación', 'Usuario creador', 'Usuario modificador',
-      'Versión', 'Fecha actualización', 'Usuario actualizador', 'Revisor', 'Word', 'PDF', 'Gestión', 'Cambios']) {
-      expect(within(tabla).getByRole('columnheader', { name: c })).toBeInTheDocument();
-    }
+    const columnas = ['Código', 'Nombre del documento', 'Estado', 'Fecha modificación', 'Versión'];
+    expect(within(tabla).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(columnas);
     expect(within(tabla).getByText('PR-LOG-001')).toBeInTheDocument();
   });
 

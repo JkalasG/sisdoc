@@ -7,6 +7,7 @@ import { PrismaModule } from './shared/infrastructure/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { FilesModule } from './modules/files/files.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { UsersModule } from './modules/users/users.module';
 
 // Un solo despliegue (monolito) con módulos aislados (monolito modular).
 // Para agregar un módulo: crear carpeta en modules/, exportar SOLO su API pública.
@@ -23,7 +24,8 @@ import { ChatModule } from './modules/chat/chat.module';
     AuthModule,
     FilesModule,
     ChatModule,
-    // UsersModule, RolesModule, GroupsModule, NotificationsModule, AuditModule → siguientes fases
+    UsersModule,
+    // RolesModule, GroupsModule, NotificationsModule, AuditModule → siguientes fases
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

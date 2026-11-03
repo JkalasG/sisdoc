@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 
 const ARGON_OPTS = { type: argon2.argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 } as const;
 
-async function ensureUser(input: { email: string; displayName: string; password: string; mustChangePassword: boolean }) {
+async function ensureUser(input: { email: string; displayName: string; password: string; mustChangePassword: boolean; roles?: string[] }) {
   const email = input.email.toLowerCase();
   const passwordHash = await argon2.hash(input.password, ARGON_OPTS);
 
@@ -16,12 +16,14 @@ async function ensureUser(input: { email: string; displayName: string; password:
       failedAttempts: 0,
       lockoutLevel: 0,
       lockedUntil: null,
+      ...(input.roles ? { roles: input.roles } : {}),
     },
     create: {
       email,
       displayName: input.displayName,
       passwordHash,
       mustChangePassword: input.mustChangePassword,
+      roles: input.roles ?? [],
     },
   });
 
@@ -42,6 +44,7 @@ async function main() {
     displayName: 'Administrador',
     password: adminPassword,
     mustChangePassword: true,
+    roles: ['ADMIN'],
   });
 
   await ensureUser({
@@ -63,6 +66,7 @@ async function main() {
     displayName: 'Carlos Mendoza (Admin)',
     password: 'Admin#2026S',
     mustChangePassword: false,
+    roles: ['ADMIN'],
   });
 
   console.log('Usuarios listos en PostgreSQL:');

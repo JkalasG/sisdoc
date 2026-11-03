@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 150" width="520" height="150">
+<defs></defs>
+<g transform="translate(0 0) scale(1.5)" fill="none" stroke-linecap="round" stroke-width="6">
+    <path d="M4 42a28 28 0 0 1 56 0" stroke="#FF4D8D"/><path d="M12 42a20 20 0 0 1 40 0" stroke="#8B5CF6"/><path d="M20 42a12 12 0 0 1 24 0" stroke="#2F6FED"/>
+    <circle cx="32" cy="42" r="3.5" fill="#2F6FED" stroke="none"/></g><text x="112" y="66" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="64" font-weight="800" fill="#2F6FED" text-anchor="start" fill-opacity="1">Iris</text><text x="4" y="128" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="21" font-weight="500" fill="#5B6B8C" text-anchor="start" fill-opacity="1">Envía, conversa y revisa en un solo lugar.</text>
+</svg>

@@ -20,7 +20,7 @@ class RolesDto {
 }
 class ListQuery {
   @IsOptional() @IsString() @MaxLength(100) q?: string;
-  @IsOptional() @IsIn(['ACTIVE', 'DISABLED']) status?: 'ACTIVE' | 'DISABLED';
+  @IsOptional() @IsIn(['ACTIVE', 'DISABLED', 'PENDING']) status?: 'ACTIVE' | 'DISABLED' | 'PENDING';
 }
 
 const meta = (req: Request) => ({ ip: clientIp(req), userAgent: req.headers['user-agent'] });

@@ -50,7 +50,7 @@ export class PrismaSessionRepository implements SessionRepository {
   async rotate(id: string, p: { oldHash: string; newHash: string; at: Date }) {
     const r = await this.prisma.session.updateMany({
       where: { id, refreshHash: p.oldHash, revokedAt: null },
-      data: { refreshHash: p.newHash, prevRefreshHash: p.oldHash, lastActivityAt: p.at },
+      data: { refreshHash: p.newHash, prevRefreshHash: p.oldHash, rotatedAt: p.at, lastActivityAt: p.at },
     });
     return r.count === 1;
   }

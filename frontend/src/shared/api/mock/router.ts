@@ -1,9 +1,7 @@
 // Backend SIMULADO. Responde como el real (mismos códigos, mismos mensajes y mismas reglas de sesión),
 // pero todo en memoria del navegador. Solo se carga si VITE_USE_MOCKS=true.
 import type { Transport, TransportResponse } from '../http';
-import type {
-  AccessLogDTO, ConversationDTO, CurrentUser, DocumentDetail, DocumentSummary, MessageDTO, MyPermission,
-} from '../types';
+import type { AccessLogDTO, ConversationDTO, CurrentUser, DocumentDetail, DocumentSummary, MessageDTO, MyPermission, UserLite, ImageDTO, QuoteDTO, ReceiptDTO, ReceiptUpdateDTO, MessageTraceDTO } from '../types';
 import {
   fakeChecksum, initialState, loadState, MockDoc, MockState, MockUser, persist, wipeStorage,
 } from './state';
@@ -14,7 +12,11 @@ const ABSOLUTE = 12 * 3_600_000;
 const COMMON = new Set(['password1234', '123456789012', 'qwertyuiop12', 'changeme1234']);
 
 let state: MockState = loadState();
-type BusEvent = { type: 'message:new'; message: MessageDTO } | { type: 'typing'; conversationId: string; name: string; on: boolean };
+type BusEvent =
+  | { type: 'message:new'; message: MessageDTO }
+  | { type: 'typing'; conversationId: string; name: string; on: boolean }
+  | { type: 'receipt:update'; update: ReceiptUpdateDTO }
+  | { type: 'message:edited'; message: MessageDTO };
 const listeners = new Set<(e: BusEvent) => void>();
 
 export const mockBus = {
@@ -36,6 +38,9 @@ const INVALID = () => fail(401, 'INVALID_CREDENTIALS', 'Credenciales inválidas 
 const UNAUTH = () => fail(401, 'UNAUTHENTICATED', 'Sesión no válida');
 const NOT_FOUND = () => fail(404, 'NOT_FOUND', 'Documento no encontrado');
 
+// Simula que otra pestaña está renovando la misma sesión: los próximos N refrescos responden "reintenta".
+let refreshRaces = 0;
+
 /** Controles que usa el panel de demostración. */
 export const mockControls = {
   get state() { return state; },
@@ -46,6 +51,7 @@ export const mockControls = {
   approveDevices() { state.scenario.deviceKnown = true; state.scenario.deviceBlocked = false; save(); },
   blockDevice() { state.scenario.deviceBlocked = true; if (state.session) state.session = null; save(); },
   endSession() { state.session = null; save(); },
+  raceRefresh(times: number) { refreshRaces = times; },
 };
 
 // ---- sesión -----------------------------------------------------------------
@@ -120,7 +126,66 @@ type Handler = (c: Ctx) => TransportResponse | Promise<TransportResponse>;
 const routes: Array<{ method: string; re: RegExp; auth: boolean; h: Handler }> = [];
 const route = (method: string, re: RegExp, h: Handler, auth = true) => routes.push({ method, re, auth, h });
 
+route('GET', /^\/auth\/config$/, () => ok({
+  captcha: { enabled: state.scenario.captchaEnabled, siteKey: state.scenario.captchaEnabled ? 'mock-site-key' : null },
+  google: { enabled: state.scenario.googleEnabled, clientId: state.scenario.googleEnabled ? 'mock-client-id' : null },
+  passwordReset: { enabled: state.scenario.passwordResetEnabled },
+}), false);
+
+// Recuperar contraseña (simulado): el código válido es siempre 123456; 5 fallos lo invalidan, igual que el servidor.
+const MOCK_RESET_CODE = '123456';
+let resetFailures = 0;
+let resetRequested = false;
+route('POST', /^\/auth\/password-reset\/request$/, ({ body }) => {
+  if (!state.scenario.passwordResetEnabled) return fail(403, 'PASSWORD_RESET_DISABLED', 'La recuperación de contraseña no está habilitada');
+  if (state.scenario.captchaEnabled && !body.captchaToken) return fail(400, 'CAPTCHA_FAILED', 'Completa la verificación de seguridad e inténtalo de nuevo');
+  resetFailures = 0; resetRequested = true;
+  return ok({ status: 'ACCEPTED', message: 'Si el correo está registrado, te enviamos un código de verificación.' }, 202); // igual exista o no
+}, false);
+route('POST', /^\/auth\/password-reset\/confirm$/, ({ body }) => {
+  if (!state.scenario.passwordResetEnabled) return fail(403, 'PASSWORD_RESET_DISABLED', 'La recuperación de contraseña no está habilitada');
+  const user = state.users.find((u) => u.email === String(body.email ?? '').trim().toLowerCase());
+  const bad = () => fail(400, 'INVALID_RESET_CODE', 'El código es incorrecto o venció. Solicita uno nuevo.');
+  if (!user || !resetRequested || resetFailures >= 5) return bad();
+  if (body.code !== MOCK_RESET_CODE) { resetFailures += 1; return bad(); }
+  const problems = validatePassword(String(body.newPassword ?? ''), user.email);
+  if (problems.length) return fail(400, 'VALIDATION', problems.join('. '));
+  if (user.password === body.newPassword) return fail(400, 'VALIDATION', 'No puedes reutilizar ninguna de tus últimas 5 contraseñas');
+  user.password = String(body.newPassword); user.mustChangePassword = false; resetRequested = false;
+  state.session = null; save();
+  return { status: 204 };
+}, false);
+
+/** Dispositivo, límite de sesiones y apertura de sesión: común a la contraseña y a Google. */
+function openMockSession(user: MockUser): TransportResponse {
+  if (state.scenario.deviceBlocked) return fail(403, 'DEVICE_BLOCKED', 'Este dispositivo no está autorizado');
+  if (!state.scenario.deviceKnown) {
+    // Igual que el backend: un dispositivo sin aprobar NO obtiene sesión.
+    return ok({ status: 'DEVICE_PENDING', message: 'Dispositivo pendiente de autorización. Un administrador debe aprobarlo.' }, 202);
+  }
+  if (state.scenario.sessionLimit) return fail(409, 'SESSION_LIMIT', 'Ya tienes 3 sesiones abiertas. Cierra una para continuar.');
+  state.session = { userId: user.id, accessExpiresAt: now() + ACCESS_TTL, lastActivityAt: now(), absoluteExpiresAt: now() + ABSOLUTE };
+  save();
+  return ok({ status: 'OK', user: toCurrent(user), sessionExpiresAt: iso(state.session.absoluteExpiresAt) });
+}
+
+// Google (simulado): el "ID token" válido es `mock:<correo>` y el correo debe pertenecer a un usuario existente (no hay auto-registro).
+route('POST', /^\/auth\/google$/, ({ body }) => {
+  if (!state.scenario.googleEnabled) return fail(403, 'GOOGLE_DISABLED', 'El acceso con Google no está habilitado');
+  const email = String(body.idToken ?? '').startsWith('mock:') ? String(body.idToken).slice(5).trim().toLowerCase() : '';
+  const user = state.users.find((u) => u.email === email);
+  if (!user) {
+    // Igual que el backend: se registra y queda pendiente; no obtiene sesión hasta que un administrador la active.
+    if (email && state.scenario.googleAutoRegister) return fail(403, 'ACCOUNT_PENDING_ACTIVATION', 'Tu cuenta aún no está activada. Contacta a un administrador para que la active.');
+    return INVALID();
+  }
+  return openMockSession(user);
+}, false);
+
 route('POST', /^\/auth\/login$/, ({ body }) => {
+  if (state.scenario.captchaEnabled && !body.captchaToken) {
+    return fail(400, 'CAPTCHA_FAILED', 'Completa la verificación de seguridad e inténtalo de nuevo');
+  }
   const email = String(body.email ?? '').trim().toLowerCase();
   const user = state.users.find((u) => u.email === email);
   const f = (state.failed[email] ??= { attempts: 0, lockedUntil: 0, level: 0 });
@@ -133,18 +198,11 @@ route('POST', /^\/auth\/login$/, ({ body }) => {
     return INVALID();
   }
   state.failed[email] = { attempts: 0, lockedUntil: 0, level: 0 };
-  if (state.scenario.deviceBlocked) return fail(403, 'DEVICE_BLOCKED', 'Este dispositivo no está autorizado');
-  if (!state.scenario.deviceKnown) {
-    // Igual que el backend: un dispositivo sin aprobar NO obtiene sesión.
-    return ok({ status: 'DEVICE_PENDING', message: 'Dispositivo pendiente de autorización. Un administrador debe aprobarlo.' }, 202);
-  }
-  if (state.scenario.sessionLimit) return fail(409, 'SESSION_LIMIT', 'Ya tienes 3 sesiones abiertas. Cierra una para continuar.');
-  state.session = { userId: user.id, accessExpiresAt: now() + ACCESS_TTL, lastActivityAt: now(), absoluteExpiresAt: now() + ABSOLUTE };
-  save();
-  return ok({ status: 'OK', user: toCurrent(user), sessionExpiresAt: iso(state.session.absoluteExpiresAt) });
+  return openMockSession(user);
 }, false);
 
 route('POST', /^\/auth\/refresh$/, () => {
+  if (refreshRaces > 0) { refreshRaces--; return fail(401, 'REFRESH_IN_PROGRESS', 'La sesión se está renovando; reintenta'); }
   const s = state.session;
   if (!s || now() - s.lastActivityAt >= INACTIVITY || now() >= s.absoluteExpiresAt || state.scenario.deviceBlocked) {
     state.session = null; save();
@@ -359,11 +417,136 @@ route('GET', /^\/conversations$/, (c: any) =>
     return { ...x, lastMessage: last ? { text: last.content ?? `📎 ${last.attachments[0]?.fileName ?? 'Archivo'}`, at: last.createdAt } : undefined };
   })));
 
+route('GET', /^\/conversations\/contacts$/, (c: any) => {
+  const q = (c.query.get('q') ?? '').trim().toLowerCase();
+  return ok(state.users.filter((u) => u.id !== c.user.id && `${u.name} ${u.email}`.toLowerCase().includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 30).map(({ id, name, email }) => ({ id, name, email })));
+});
+
+// Mismas reglas que el servidor: un solo chat directo por pareja; grupos con nombre y 2+ personas además del creador.
+route('POST', /^\/conversations$/, (c: any) => {
+  const memberIds = [...new Set<string>(c.body.memberIds ?? [])].filter((id) => id !== c.user.id);
+  const people = memberIds.map((id) => state.users.find((u) => u.id === id));
+  const bad = () => fail(400, 'VALIDATION', 'Alguna de las personas elegidas no está disponible');
+  if (c.body.type === 'DIRECT') {
+    if (memberIds.length !== 1) return fail(400, 'VALIDATION', 'Un chat directo es con una sola persona');
+    if (!people[0]) return bad();
+    const existing = state.conversations.find((x) => x.type === 'DIRECT' && x.memberIds.includes(c.user.id) && x.memberIds.includes(memberIds[0]));
+    const toDto = ({ memberIds: _m, ...x }: (typeof state.conversations)[number]): ConversationDTO => x;
+    if (existing) return ok({ created: false, conversation: toDto(existing) }, 201);
+    const conv = { id: nextId('c'), type: 'DIRECT' as const, name: people[0].name, members: [c.user, people[0]].map(({ id, name, email }: UserLite) => ({ id, name, email })), memberIds: [c.user.id, memberIds[0]], unread: 0 };
+    state.conversations.push(conv); save();
+    return ok({ created: true, conversation: toDto(conv) }, 201);
+  }
+  if (c.body.type !== 'GROUP') return fail(400, 'VALIDATION', 'Tipo de conversación inválido');
+  const name = String(c.body.name ?? '').trim().replace(/\s+/g, ' ');
+  if (name.length < 2 || name.length > 80) return fail(400, 'VALIDATION', 'El nombre del grupo debe tener entre 2 y 80 caracteres');
+  if (memberIds.length < 2) return fail(400, 'VALIDATION', 'Un grupo necesita al menos 2 personas además de ti');
+  if (people.some((p) => !p)) return bad();
+  const conv = { id: nextId('c'), type: 'GROUP' as const, name, members: [c.user, ...people].map((u: UserLite) => ({ id: u.id, name: u.name, email: u.email })), memberIds: [c.user.id, ...memberIds], unread: 0 };
+  state.conversations.push(conv); save();
+  const { memberIds: _m, ...dto } = conv;
+  return ok({ created: true, conversation: dto }, 201);
+});
+
+route('POST', /^\/conversations\/([^/]+)\/read$/, (c: any) => {
+  const conv = state.conversations.find((x) => x.id === c.m[1]);
+  if (!conv || !conv.memberIds.includes(c.user.id)) return fail(403, 'FORBIDDEN', 'No perteneces a esta conversación');
+  conv.unread = 0; save();
+  return { status: 204 };
+});
+
+/** Lo que ve cada persona: solo el autor ve los acuses de sus mensajes; el historial de ediciones nunca sale. */
+const viewFor = (m: MessageDTO, userId: string): MessageDTO => {
+  const { receipts, _edits, ...rest } = m as MessageDTO & { _edits?: unknown };
+  void _edits;
+  return userId === m.authorId && receipts ? { ...rest, receipts } : rest;
+};
+
+/** El servidor registra «entregado» y «leído» una sola vez: la primera hora queda fija. */
+function markReceipts(m: MessageDTO, user: { id: string; name: string }, level: 'delivered' | 'read') {
+  const t = iso();
+  const list = (m.receipts ??= []);
+  let r = list.find((x) => x.userId === user.id);
+  if (!r) { r = { userId: user.id, userName: user.name, deliveredAt: null, readAt: null }; list.push(r); }
+  if (!r.deliveredAt) r.deliveredAt = t;
+  if (level === 'read' && !r.readAt) r.readAt = t;
+  return r;
+}
+
 route('GET', /^\/conversations\/([^/]+)\/messages$/, (c: any) => {
   const conv = state.conversations.find((x) => x.id === c.m[1]);
   if (!conv || !conv.memberIds.includes(c.user.id)) return fail(404, 'NOT_FOUND', 'Conversación no encontrada');
-  conv.unread = 0; save();
-  return ok(state.messages.filter((m) => m.conversationId === conv.id));
+  const all = state.messages.filter((m) => m.conversationId === conv.id); // en orden cronológico (inserción)
+  const before = c.query.get('before');
+  const limit = Math.min(Math.max(Number(c.query.get('limit')) || 20, 1), 50);
+  let end = all.length;
+  if (before) {
+    const at = all.findIndex((m) => m.id === before);
+    if (at < 0) return fail(400, 'VALIDATION', 'Cursor de paginación inválido');
+    end = at;
+  } else { // solo abrir la conversación la marca como leída
+    conv.unread = 0;
+    for (const m of all.filter((x) => x.authorId !== c.user.id)) markReceipts(m, c.user, 'read');
+    save();
+  }
+  const start = Math.max(0, end - limit);
+  return ok({ items: all.slice(start, end).map((m) => viewFor(m, c.user.id)), nextCursor: start > 0 ? all[start].id : null });
+});
+
+const stagedImages = new Map<string, ImageDTO & { uploaderId: string; conversationId: string }>();
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+route('POST', /^\/conversations\/([^/]+)\/images$/, (c: any) => {
+  const conv = state.conversations.find((x) => x.id === c.m[1]);
+  if (!conv || !conv.memberIds.includes(c.user.id)) return fail(403, 'FORBIDDEN', 'No perteneces a esta conversación');
+  const file = c.form?.get('file') as File | null;
+  if (!file || !file.size) return fail(400, 'VALIDATION', 'Falta la imagen');
+  if (file.size > 5 * 1024 * 1024) return fail(400, 'VALIDATION', 'La imagen no puede superar 5 MB');
+  if (!IMAGE_TYPES.includes(file.type)) return fail(400, 'VALIDATION', 'Solo se aceptan imágenes PNG, JPEG, GIF o WebP válidas');
+  const mine = [...stagedImages.values()].filter((i) => i.uploaderId === c.user.id && i.conversationId === conv.id);
+  if (mine.length >= 20) return fail(400, 'VALIDATION', 'Tienes demasiadas imágenes sin enviar en esta conversación');
+  const url = typeof URL.createObjectURL === 'function'
+    ? URL.createObjectURL(file)
+    : `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect width="640" height="480" fill="#94a3b8"/></svg>')}`;
+  const image = { id: nextId('img'), fileName: file.name || 'imagen', mimeType: file.type, sizeBytes: file.size, width: 640, height: 480, url };
+  stagedImages.set(image.id, { ...image, uploaderId: c.user.id, conversationId: conv.id });
+  return ok(image, 201);
+});
+
+route('PATCH', /^\/conversations\/([^/]+)\/messages\/([^/]+)$/, (c: any) => {
+  const conv = state.conversations.find((x) => x.id === c.m[1]);
+  if (!conv || !conv.memberIds.includes(c.user.id)) return fail(403, 'FORBIDDEN', 'No perteneces a esta conversación');
+  const msg = state.messages.find((x) => x.id === c.m[2] && x.conversationId === conv.id);
+  if (!msg) return fail(404, 'NOT_FOUND', 'Mensaje no encontrado');
+  if (msg.authorId !== c.user.id) return fail(403, 'FORBIDDEN', 'Solo puedes editar tus propios mensajes');
+  const recent = state.messages.filter((x) => x.conversationId === conv.id && x.authorId === c.user.id).slice(-3).map((x) => x.id);
+  if (!recent.includes(msg.id)) return fail(403, 'FORBIDDEN', 'Solo puedes editar tus últimos 3 mensajes de esta conversación');
+  if (typeof c.body.content !== 'string') return fail(400, 'VALIDATION', 'El mensaje debe ser texto');
+  const content = c.body.content.trim();
+  if (content.length > 4000) return fail(400, 'VALIDATION', 'El mensaje no puede superar 4000 caracteres');
+  const hasMedia = msg.attachments.length + (msg.images?.length ?? 0) > 0;
+  if (!content && !hasMedia) return fail(400, 'VALIDATION', 'El mensaje no puede quedar vacío');
+  if (content === (msg.content ?? '').trim()) return fail(400, 'VALIDATION', 'No hay cambios que guardar');
+  const holder = msg as MessageDTO & { _edits?: Array<{ at: string; editorId: string; previousContent?: string }> };
+  (holder._edits ??= []).push({ at: iso(), editorId: c.user.id, previousContent: msg.content });
+  msg.content = content || undefined;
+  msg.editedAt = holder._edits.at(-1)!.at;
+  save();
+  return ok(viewFor(msg, c.user.id));
+});
+
+route('GET', /^\/conversations\/([^/]+)\/messages\/([^/]+)\/trace$/, (c: any) => {
+  const conv = state.conversations.find((x) => x.id === c.m[1]);
+  if (!conv || !conv.memberIds.includes(c.user.id)) return fail(403, 'FORBIDDEN', 'No perteneces a esta conversación');
+  const msg = state.messages.find((x) => x.id === c.m[2] && x.conversationId === conv.id);
+  if (!msg) return fail(404, 'NOT_FOUND', 'Mensaje no encontrado');
+  if (msg.authorId !== c.user.id) return fail(403, 'FORBIDDEN', 'Solo quien envió el mensaje puede ver su historial de entrega');
+  const receipts: ReceiptDTO[] = [...(msg.receipts ?? [])].sort((a, b) => a.userName.localeCompare(b.userName));
+  const status: MessageTraceDTO['status'] = receipts.length && receipts.every((r) => r.readAt) ? 'READ'
+    : receipts.length && receipts.every((r) => r.deliveredAt || r.readAt) ? 'DELIVERED' : 'SENT';
+  const edits = (msg as MessageDTO & { _edits?: MessageTraceDTO['edits'] })._edits ?? [];
+  return ok({ messageId: msg.id, sentAt: msg.createdAt, status, receipts, edits } satisfies MessageTraceDTO);
 });
 
 route('POST', /^\/conversations\/([^/]+)\/messages$/, (c: any) => {
@@ -382,28 +565,62 @@ route('POST', /^\/conversations\/([^/]+)\/messages$/, (c: any) => {
     }
     addLog(d.id, c.user.id, 'COMPARTIR', { versionNumber: v.versionNumber, channel: `chat:${conv.id}`, detail: `Compartido en «${conv.name}»` });
   }
-  if (!content && attachments.length === 0) return fail(400, 'VALIDATION', 'Mensaje vacío');
+  // Responder: el mensaje citado debe ser de ESTA conversación.
+  let replyTo: QuoteDTO | undefined;
+  if (c.body.replyToId) {
+    const q = state.messages.find((x) => x.id === c.body.replyToId && x.conversationId === conv.id);
+    if (!q) return fail(400, 'VALIDATION', 'El mensaje al que respondes no existe en esta conversación');
+    replyTo = {
+      id: q.id, authorId: q.authorId, authorName: q.authorName, text: q.content?.trim() || ((q.images?.length ?? 0) > 0 ? 'Foto' : 'Documento'),
+      kind: (q.images?.length ?? 0) > 0 ? 'IMAGE' : q.attachments.length > 0 ? 'DOCUMENT' : 'TEXT',
+    };
+  }
+  // Fotos: solo las que esta persona subió a esta conversación y que nadie usó.
+  const imageIds: string[] = c.body.imageIds ?? [];
+  if (new Set(imageIds).size !== imageIds.length) return fail(400, 'VALIDATION', 'Imágenes repetidas');
+  if (imageIds.length > 10) return fail(400, 'VALIDATION', 'Máximo 10 imágenes por mensaje');
+  const images: ImageDTO[] = [];
+  for (const id of imageIds) {
+    const im = stagedImages.get(id);
+    if (!im || im.uploaderId !== c.user.id || im.conversationId !== conv.id) return fail(400, 'VALIDATION', 'Alguna imagen ya no está disponible; vuelve a subirla');
+    images.push({ id: im.id, fileName: im.fileName, mimeType: im.mimeType, sizeBytes: im.sizeBytes, width: im.width, height: im.height, url: im.url });
+  }
+  if (!content && attachments.length === 0 && images.length === 0) return fail(400, 'VALIDATION', 'Mensaje vacío');
+  imageIds.forEach((id) => stagedImages.delete(id));
+
+  const recipients = state.users.filter((u) => conv.memberIds.includes(u.id) && u.id !== c.user.id);
   const message: MessageDTO = {
     id: nextId('m'), conversationId: conv.id, authorId: c.user.id, authorName: c.user.name,
     content: content || undefined, attachments, createdAt: iso(),
+    ...(images.length ? { images } : {}), ...(replyTo ? { replyToId: replyTo.id, replyTo } : {}),
+    receipts: recipients.map((u) => ({ userId: u.id, userName: u.name, deliveredAt: null, readAt: null })),
   };
   state.messages.push(message); save();
 
+  const publish = (u: { id: string; name: string }, level: 'delivered' | 'read') => {
+    const r = markReceipts(message, u, level); save();
+    listeners.forEach((l) => l({ type: 'receipt:update', update: { conversationId: conv.id, userId: u.id, userName: u.name, items: [{ messageId: message.id, deliveredAt: r.deliveredAt, readAt: r.readAt }] } }));
+  };
+  // Quienes están «conectados» lo reciben enseguida (todos menos el último miembro, que se queda sin recibir: se ve el estado pendiente).
+  const online = recipients.length > 2 ? recipients.slice(0, -1) : recipients;
+  online.forEach((u, i) => setTimeout(() => publish(u, 'delivered'), 500 + i * 250));
+
   // Respuesta simulada de otro miembro, para ver el tiempo real en la interfaz.
-  const other = state.users.find((u) => conv.memberIds.includes(u.id) && u.id !== c.user.id);
+  const other = recipients[0];
   if (other) {
-    setTimeout(() => listeners.forEach((l) => l({ type: 'typing', conversationId: conv.id, name: other.name, on: true })), 500);
+    setTimeout(() => listeners.forEach((l) => l({ type: 'typing', conversationId: conv.id, name: other.name, on: true })), 900);
     setTimeout(() => {
+      publish(other, 'read'); // quien responde ya lo leyó
       const reply: MessageDTO = {
         id: nextId('m'), conversationId: conv.id, authorId: other.id, authorName: other.name,
-        content: attachments.length ? 'Recibido, ya lo descargué. Gracias.' : 'Entendido 👍', attachments: [], createdAt: iso(),
+        content: attachments.length ? 'Recibido, ya lo descargué. Gracias.' : images.length ? '¡Qué buena foto! 👌' : 'Entendido 👍', attachments: [], createdAt: iso(),
       };
       state.messages.push(reply); save();
       listeners.forEach((l) => l({ type: 'typing', conversationId: conv.id, name: other.name, on: false }));
       listeners.forEach((l) => l({ type: 'message:new', message: reply }));
-    }, 2400);
+    }, 2600);
   }
-  return ok(message, 201);
+  return ok(viewFor(message, c.user.id), 201);
 });
 
 // ---- transporte -------------------------------------------------------------

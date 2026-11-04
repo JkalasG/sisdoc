@@ -42,6 +42,12 @@ export function dayLabel(iso: string): string {
   return d.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
+/** Fecha y hora CON segundos, para auditoría: «15/03/2024 14:35:07». */
+export const fullStamp = (iso: string) => {
+  const d = new Date(iso), p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+};
+
 /** Fecha y hora para tablas: «15/03/2024 14:35». */
 export const shortDate = (iso: string) => {
   const d = new Date(iso), p = (n: number) => String(n).padStart(2, '0');

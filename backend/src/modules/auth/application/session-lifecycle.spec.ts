@@ -1,4 +1,5 @@
-import { UnauthenticatedError } from '../domain/auth-errors';
+import { RefreshRaceError, UnauthenticatedError } from '../domain/auth-errors';
+import { SESSION_POLICY } from '../domain/session';
 import { buildWorld, hours, minutes } from '../testing/fakes';
 
 async function authenticatedWorld() {
@@ -21,16 +22,36 @@ describe('RefreshSessionUseCase', () => {
   it('el refresh anterior deja de servir (rotación)', async () => {
     const { w, login } = await authenticatedWorld();
     await w.refresh.execute({ refreshToken: login.refreshToken });
+    w.clock.advance(SESSION_POLICY.rotationGraceMs);
     await expect(w.refresh.execute({ refreshToken: login.refreshToken })).rejects.toBeInstanceOf(UnauthenticatedError);
   });
 
   it('REUTILIZAR un refresh viejo revoca la sesión completa, también el refresh nuevo', async () => {
     const { w, login, sessionId } = await authenticatedWorld();
     const second = await w.refresh.execute({ refreshToken: login.refreshToken });
+    w.clock.advance(SESSION_POLICY.rotationGraceMs);
     await expect(w.refresh.execute({ refreshToken: login.refreshToken })).rejects.toBeInstanceOf(UnauthenticatedError); // atacante
     expect(w.sessions.get(sessionId).revokedReason).toBe('ROTATION_REUSE');
     await expect(w.refresh.execute({ refreshToken: second.refreshToken })).rejects.toBeInstanceOf(UnauthenticatedError); // usuario real
     expect(w.events.types()).toContain('REFRESH_REUSE');
+  });
+
+  it('dentro de la ventana de gracia, el token recién rotado NO revoca (otra pestaña) y el nuevo sigue sirviendo', async () => {
+    const { w, login, sessionId } = await authenticatedWorld();
+    const second = await w.refresh.execute({ refreshToken: login.refreshToken });
+    w.clock.advance(3_000);
+    await expect(w.refresh.execute({ refreshToken: login.refreshToken })).rejects.toBeInstanceOf(RefreshRaceError);
+    expect(w.sessions.get(sessionId).revokedAt).toBeNull();
+    expect(w.events.types()).not.toContain('REFRESH_REUSE');
+    await expect(w.refresh.execute({ refreshToken: second.refreshToken })).resolves.toBeDefined();
+  });
+
+  it('pasada la ventana de gracia, reutilizar el token viejo sí revoca la sesión', async () => {
+    const { w, login, sessionId } = await authenticatedWorld();
+    await w.refresh.execute({ refreshToken: login.refreshToken });
+    w.clock.advance(10_000);
+    await expect(w.refresh.execute({ refreshToken: login.refreshToken })).rejects.toBeInstanceOf(UnauthenticatedError);
+    expect(w.sessions.get(sessionId).revokedReason).toBe('ROTATION_REUSE');
   });
 
   it('un token desconocido es rechazado', async () => {
@@ -126,6 +147,24 @@ describe('AuthenticateRequestUseCase (cada petición protegida)', () => {
     const { w, login } = await authenticatedWorld();
     w.devices.setStatus(w.devices.devices[0].id, 'BLOCKED');
     await expect(w.authenticate.execute({ accessToken: login.accessToken })).rejects.toBeInstanceOf(UnauthenticatedError);
+  });
+
+  it('verifySession (conexiones largas): acepta la sesión viva y rechaza revocada, ajena, deshabilitada o con dispositivo bloqueado', async () => {
+    const { w, login, sessionId } = await authenticatedWorld();
+    await expect(w.authenticate.verifySession(sessionId, 'user-1')).resolves.toMatchObject({ userId: 'user-1' });
+    await expect(w.authenticate.verifySession(sessionId, 'otro-usuario')).rejects.toBeInstanceOf(UnauthenticatedError);
+    await expect(w.authenticate.verifySession('ses-999', 'user-1')).rejects.toBeInstanceOf(UnauthenticatedError);
+
+    w.devices.setStatus(w.devices.devices[0].id, 'BLOCKED');
+    await expect(w.authenticate.verifySession(sessionId, 'user-1')).rejects.toBeInstanceOf(UnauthenticatedError);
+    w.devices.setStatus(w.devices.devices[0].id, 'TRUSTED');
+
+    w.users.users.get('user-1')!.status = 'DISABLED';
+    await expect(w.authenticate.verifySession(sessionId, 'user-1')).rejects.toBeInstanceOf(UnauthenticatedError);
+    w.users.users.get('user-1')!.status = 'ACTIVE';
+
+    await w.logout.execute({ refreshToken: login.refreshToken });
+    await expect(w.authenticate.verifySession(sessionId, 'user-1')).rejects.toBeInstanceOf(UnauthenticatedError);
   });
 
   it('la actividad se escribe como máximo una vez por minuto', async () => {

@@ -8,6 +8,7 @@ export interface Session {
   deviceId: string;
   refreshHash: string;
   prevRefreshHash: string | null;
+  rotatedAt: Date | null;
   ip: string | null;
   userAgent: string | null;
   createdAt: Date;
@@ -22,6 +23,8 @@ export const SESSION_POLICY = {
   inactivityMs: 30 * 60_000, // sin actividad 30 min → la sesión muere
   absoluteMs: 12 * 60 * 60_000, // 12 h máximo, aunque haya actividad
   maxLive: 3, // sesiones simultáneas por usuario; la 4ª se rechaza
+  // Un refresh ya rotado que llega dentro de esta ventana es la carrera de otra pestaña, no un robo.
+  rotationGraceMs: 10_000,
   touchEveryMs: 60_000, // no se escribe actividad en BD más de 1 vez/minuto
 } as const;
 

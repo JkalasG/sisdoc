@@ -31,6 +31,7 @@ export default {
         progress: { from: { width: '0%' }, to: { width: '100%' } },
         scan: { '0%,100%': { top: '14%', opacity: 0.2 }, '50%': { top: '80%', opacity: 1 } },
         toast: { '0%': { opacity: 0, transform: 'translate(-50%, 12px)' }, '100%': { opacity: 1, transform: 'translate(-50%, 0)' } },
+        notify: { '0%': { opacity: 0, transform: 'translateX(24px)' }, '100%': { opacity: 1, transform: 'none' } },
       },
       animation: {
         rise: 'rise .3s ease-out both',
@@ -38,6 +39,7 @@ export default {
         progress: 'progress 4s linear forwards',
         scan: 'scan 1.6s ease-in-out infinite',
         toast: 'toast .25s ease-out both',
+        notify: 'notify .25s ease-out both',
       },
     },
   },

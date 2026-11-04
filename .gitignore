@@ -9,3 +9,6 @@ coverage/
 frontend/android/app/build/
 frontend/android/.gradle/
 frontend/android/local.properties
+
+# Documentos subidos por los usuarios (datos reales: nunca al repositorio)
+backend/storage/

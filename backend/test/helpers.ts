@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { Test, TestingModuleBuilder } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
 import request from 'supertest';
@@ -12,8 +12,10 @@ export const PASSWORD = 'Clave-Segura-2026';
 export const UA = 'Mozilla/5.0 (Windows NT 10.0) Chrome/120.0 Safari/537.36';
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 
-export async function createApp(): Promise<INestApplication> {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+export async function createApp(
+  configure: (builder: TestingModuleBuilder) => TestingModuleBuilder = (b) => b,
+): Promise<INestApplication> {
+  const moduleRef = await configure(Test.createTestingModule({ imports: [AppModule] })).compile();
   const app = moduleRef.createNestApplication();
   configureApp(app);
   await app.init();
@@ -24,7 +26,7 @@ export const prisma = new PrismaClient();
 
 export async function resetDb() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "users", "security_events", "documento_bitacora_accesos", "documentos" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "users", "security_events", "documento_bitacora_accesos", "documentos", "conversations", "conversation_members", "messages", "message_attachments", "message_receipts", "message_edits", "message_images" RESTART IDENTITY CASCADE',
   );
 }
 

@@ -101,7 +101,7 @@ Cada recurso declara **a quién pertenece**:
 
 ### 3.2.1 Login con Google (además de correo + contraseña)
 
-Se usa OpenID Connect (flujo de código con PKCE). Reglas de seguridad:
+Se usa el botón oficial de Google Identity Services: el navegador recibe un **ID token firmado por Google** y lo envía a `POST /auth/google`; el servidor valida firma, emisor, vencimiento y audiencia (nuestro `GOOGLE_CLIENT_ID`) con `google-auth-library`. No hace falta Client secret ni redirecciones. Se enciende con `GOOGLE_LOGIN_ENABLED=true` en `backend/.env`; apagado, el botón no aparece y el endpoint responde 403. Reglas de seguridad:
 - **No hay auto-registro**: solo entra con Google quien **ya fue creado por un admin** con ese correo. Una cuenta Google cualquiera no obtiene acceso.
 - Se exige `email_verified = true` y, si la organización usa Google Workspace, se restringe al dominio (`hd`) de la empresa.
 - El vínculo se hace por `sub` de Google (estable), no solo por el correo.
@@ -109,6 +109,13 @@ Se usa OpenID Connect (flujo de código con PKCE). Reglas de seguridad:
 - Un usuario deshabilitado, bloqueado o fuera de IP permitida **no entra por Google tampoco**: se aplican las mismas políticas, y se crea la misma sesión (cookies, 30 min / 12 h, máx. 3).
 - El usuario puede tener solo Google, solo contraseña o ambos (`passwordHash` nullable). Quitar Google a un usuario revoca sus sesiones.
 - **P16 decidido: Google es "acceso rápido", no reemplaza a la contraseña.** Tiene un **interruptor de control** para habilitarlo: global (todo el sistema), por rol y por usuario (`googleLoginEnabled`). Si está apagado para alguien, el botón de Google no le funciona. El acceso rápido sigue sujeto a todo lo demás: dispositivo aprobado, límite de 3 sesiones, bloqueo geográfico, IP y estado del usuario.
+
+### 3.2.2 Captcha en el login (Cloudflare Turnstile)
+
+- `CAPTCHA_ENABLED=true` en `backend/.env` lo hace **obligatorio** en el login con contraseña: sin token válido el servidor responde `400 CAPTCHA_FAILED`; el login con Google no lo necesita.
+- Se verifica **antes** de mirar las credenciales: un captcha fallido no cuenta como intento de contraseña (nadie puede bloquear la cuenta de otro) ni revela si la contraseña era buena.
+- Falla cerrado: si Cloudflare no responde, no se deja pasar a nadie. El token se usa una sola vez.
+- El navegador lee `GET /auth/config` (solo claves públicas) para mostrar u ocultar captcha y Google; con `false` desaparecen de la pantalla. La secret key nunca sale del backend.
 
 ### 3.3 Flujos
 1. **Alta de usuario**: solo un administrador (con permiso `user.create`). No hay auto-registro. Se genera una contraseña temporal que se muestra una vez.
@@ -482,6 +489,14 @@ Casos especiales:
 - **Eventos de seguridad graves** (bloqueos, reutilización de refresh): mismo plazo; nunca se purgan antes.
 - Los archivos exportados se consultan bajo demanda (restaurar la partición a una tabla temporal), con permiso `audit.read_archive`.
 - ❓ P14: confirma el plazo total. Si tienes una **obligación legal** de tu país o sector, manda ese plazo y lo ajustamos.
+
+## 5.5 Mensajería: imágenes, ediciones y trazabilidad de entrega
+
+- **Imágenes:** solo PNG, JPEG, GIF y WebP, hasta 5 MB y 10 por mensaje. El tipo se decide por la **firma de bytes** del archivo (no por el nombre ni por lo que declare el navegador) y se rechazan medidas absurdas. SVG queda fuera porque puede traer scripts. Se sirven solo a miembros de la conversación, con `nosniff`, `Content-Security-Policy: sandbox` y caché privada. Una subida aún no enviada solo la ve quien la subió, y un máximo de 20 pendientes por persona y conversación evita llenar el disco.
+- **Entregado / leído:** cada mensaje nace con un acuse pendiente por destinatario. La hora de **entrega** (al conectarse, o al instante si ya estaba conectado) y la de **lectura** (al abrir o ver la conversación con la pestaña visible) las pone el **servidor**, se registran **una sola vez** y nunca se sobrescriben. Solo quien envió el mensaje las ve: los demás miembros no saben quién lo leyó ni cuándo.
+- **Ediciones:** solo los últimos 3 mensajes propios de la conversación. Cada edición guarda el texto anterior y su hora en una tabla de solo-agregar (`message_edits`).
+- **Responder:** el mensaje citado debe existir y ser de la misma conversación, para no filtrar texto de chats ajenos.
+- **Pendiente de decidir:** el acceso de auditoría (rol Auditor/Admin) al historial de entrega y ediciones de mensajes ajenos. Hoy los datos se guardan completos, pero solo su autor puede consultarlos por la API.
 
 ## 6. API del nivel 1
 

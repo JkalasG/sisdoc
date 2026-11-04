@@ -11,11 +11,13 @@
     "test": "jest",
     "test:e2e": "jest --config test/jest-e2e.json --runInBand",
     "device:approve": "ts-node scripts/approve-device.ts",
+    "gmail:token": "ts-node scripts/gmail-refresh-token.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "ts-node prisma/seed.ts"
+    "prisma:seed": "ts-node prisma/seed.ts",
+    "seed:chat": "ts-node prisma/seed-chat.ts"
   },
   "prisma": {
     "schema": "prisma/schema.prisma",
@@ -41,6 +43,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "cookie-parser": "^1.4.7",
+    "google-auth-library": "^9.15.1",
     "helmet": "^8.0.0",
     "ioredis": "^5.4.0",
     "passport": "^0.7.0",

@@ -110,7 +110,8 @@ export class OnlyOfficeAdapter implements OfficeEditorPort {
       ? `${this.serverInternalUrl}${downloadUrl.slice(this.serverPublicUrl.length)}`
       : downloadUrl;
 
-    const res = await fetch(targetUrl);
+    // redirect:'error': una redirección podría llevar la petición a una dirección interna que la lista blanca no cubre.
+    const res = await fetch(targetUrl, { redirect: 'error', signal: AbortSignal.timeout(30_000) });
     if (!res.ok) {
       throw new ValidationError(`No se pudo obtener el documento editado desde OnlyOffice (HTTP ${res.status})`);
     }

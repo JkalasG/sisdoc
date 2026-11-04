@@ -7,8 +7,8 @@ import { Avatar, proto, Spinner } from '@/shared/ui/primitives';
 type Filter = 'all' | 'unread' | 'groups';
 const FILTERS: Array<[Filter, string]> = [['all', 'Todos'], ['unread', 'No leídos'], ['groups', 'Grupos']];
 
-export function ChatList({ conversations, activeId, onSelect, typing, loading }: {
-  conversations: ConversationDTO[]; activeId?: string; onSelect: (id: string) => void;
+export function ChatList({ conversations, activeId, onSelect, onNew, typing, loading }: {
+  conversations: ConversationDTO[]; activeId?: string; onSelect: (id: string) => void; onNew: () => void;
   typing: Record<string, string>; loading: boolean;
 }) {
   const [q, setQ] = useState('');
@@ -24,7 +24,7 @@ export function ChatList({ conversations, activeId, onSelect, typing, loading }:
       <header className="flex items-center justify-between px-4 pb-2 pt-4">
         <h1 className="text-[22px]">Chats</h1>
         <div className="flex gap-1">
-          <button className="icon-btn !bg-transparent" aria-label="Chat nuevo" onClick={() => proto('Iniciar un chat nuevo')}><MessageSquarePlus className="h-5 w-5" /></button>
+          <button className="icon-btn !bg-transparent" aria-label="Chat nuevo" onClick={onNew}><MessageSquarePlus className="h-5 w-5" /></button>
           <button className="icon-btn !bg-transparent" aria-label="Menú" onClick={() => proto('El menú de chats')}><MoreVertical className="h-5 w-5" /></button>
         </div>
       </header>
@@ -73,7 +73,12 @@ export function ChatList({ conversations, activeId, onSelect, typing, loading }:
             </li>
           );
         })}
-        {!loading && rows.length === 0 && <li className="p-8 text-center text-sm text-ink-mute">No hay chats que coincidan.</li>}
+        {!loading && rows.length === 0 && (
+          <li className="p-8 text-center text-sm text-ink-mute">
+            {conversations.length === 0 ? 'Todavía no tienes chats.' : 'No hay chats que coincidan.'}{' '}
+            <button className="font-semibold text-chat-accent underline" onClick={onNew}>Empieza uno nuevo</button>
+          </li>
+        )}
       </ul>
     </>
   );

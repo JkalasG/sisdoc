@@ -88,6 +88,27 @@ describe('Autenticación simulada = reglas del backend real', () => {
     expect(lost).not.toHaveBeenCalled();
   });
 
+  it('carrera entre pestañas: si otra pestaña está renovando, reintenta y la sesión NO se pierde', async () => {
+    await loginAna();
+    mockControls.expireAccessToken();
+    mockControls.raceRefresh(2); // dos respuestas "reintenta" antes de que la cookie nueva esté disponible
+    const lost = vi.fn();
+    authHooks.onSessionLost = lost;
+    await expect(filesApi.list()).resolves.toBeInstanceOf(Array);
+    expect(lost).not.toHaveBeenCalled();
+  });
+
+  it('si la carrera no se resuelve tras varios reintentos, se da la sesión por perdida', async () => {
+    await loginAna();
+    mockControls.expireAccessToken();
+    mockControls.raceRefresh(99);
+    const lost = vi.fn();
+    authHooks.onSessionLost = lost;
+    expect(await code(filesApi.list())).toMatchObject({ status: 401 });
+    expect(lost).toHaveBeenCalledTimes(1);
+    mockControls.raceRefresh(0);
+  });
+
   it('31 min sin actividad: la sesión muere, no se renueva y se avisa', async () => {
     await loginAna();
     mockControls.advanceTime(31 * 60_000);
@@ -216,6 +237,99 @@ describe('Chat simulado', () => {
 
   it('un mensaje vacío es rechazado', async () => {
     expect(await code(chatApi.send('c-marta', '   ', []))).toMatchObject({ status: 400 });
+  });
+
+  it('el historial se entrega por páginas: recorrerlas no repite ni salta mensajes', async () => {
+    await loginAna();
+    const vistos: string[] = [];
+    let cursor: string | undefined;
+    let paginas = 0;
+    do {
+      const r = await chatApi.messages('c-alfa', cursor, 20);
+      expect(r.items.length).toBeLessThanOrEqual(20);
+      vistos.unshift(...r.items.map((m) => m.id));
+      cursor = r.nextCursor ?? undefined; paginas++;
+    } while (cursor);
+    expect(paginas).toBe(7);
+    expect(vistos).toHaveLength(121);
+    expect(new Set(vistos).size).toBe(121);
+  });
+
+  it('solo abrir la conversación (sin cursor) la marca como leída; pedir páginas antiguas no', async () => {
+    await loginAna();
+    const unread = async () => (await chatApi.conversations()).find((c) => c.id === 'c-conta')!.unread;
+    const p1 = await chatApi.messages('c-conta', undefined, 1);
+    expect(await unread()).toBe(0);
+    mockControls.state.conversations.find((c) => c.id === 'c-conta')!.unread = 2;
+    await chatApi.messages('c-conta', p1.nextCursor!, 1);
+    expect(await unread()).toBe(2);
+  });
+
+  it('un cursor inválido se rechaza', async () => {
+    await loginAna();
+    expect(await code(chatApi.messages('c-alfa', 'inventado'))).toMatchObject({ status: 400 });
+  });
+
+  it('responder: la cita sale del mensaje original y debe ser de la misma conversación', async () => {
+    await loginAna();
+    const r = await chatApi.send('c-luis', 'De acuerdo', [], { replyToId: 'm3' });
+    expect(r.replyTo).toMatchObject({ id: 'm3', authorName: 'Luis Mamani', text: 'Recibido, lo reviso esta tarde.', kind: 'TEXT' });
+    expect(await code(chatApi.send('c-luis', 'x', [], { replyToId: 'm4' }))).toMatchObject({ status: 400 }); // m4 es de Contabilidad
+    expect(await code(chatApi.send('c-luis', 'x', [], { replyToId: 'no-existe' }))).toMatchObject({ status: 400 });
+  });
+
+  it('editar: solo los 3 últimos propios, con el motivo del rechazo; guarda el texto anterior', async () => {
+    await loginAna();
+    const a = await chatApi.send('c-luis', 'uno', []); const b = await chatApi.send('c-luis', 'dos', []);
+    const c3 = await chatApi.send('c-luis', 'tres', []); await chatApi.send('c-luis', 'cuatro', []);
+    expect(await code(chatApi.edit('c-luis', a.id, 'tarde'))).toMatchObject({ status: 403, message: expect.stringMatching(/últimos 3/) });
+    const ok = await chatApi.edit('c-luis', c3.id, 'tres corregido');
+    expect(ok).toMatchObject({ content: 'tres corregido' });
+    expect(ok.editedAt).toBeTruthy();
+    expect(await code(chatApi.edit('c-luis', b.id, 'dos corregido'))).toBeNull(); // sigue dentro de la ventana (3 últimos: dos, tres, cuatro)
+    expect(await code(chatApi.edit('c-luis', 'm3', 'hackeo'))).toMatchObject({ status: 403, message: expect.stringMatching(/propios/) }); // de Luis
+    expect(await code(chatApi.edit('c-luis', c3.id, 'tres corregido'))).toMatchObject({ status: 400, message: expect.stringMatching(/cambios/) });
+    expect(await code(chatApi.edit('c-luis', c3.id, '  '))).toMatchObject({ status: 400 });
+    const traza = await chatApi.trace('c-luis', c3.id);
+    expect(traza.edits).toHaveLength(1);
+    expect(traza.edits[0]).toMatchObject({ previousContent: 'tres' });
+  });
+
+  it('acuses: solo el autor los ve; el historial de entrega y lectura es solo suyo', async () => {
+    await loginAna();
+    const propio = (await chatApi.messages('c-luis')).items.find((m) => m.id === 'm1')!;
+    expect(propio.receipts).toHaveLength(1);
+    expect(propio.receipts![0]).toMatchObject({ userName: 'Luis Mamani' });
+    expect(propio.receipts![0].deliveredAt).toBeTruthy();
+    expect((await chatApi.messages('c-luis')).items.find((m) => m.id === 'm3')!.receipts).toBeUndefined(); // de Luis: Ana no ve sus acuses
+    const t = await chatApi.trace('c-luis', 'm1');
+    expect(t).toMatchObject({ status: 'READ', messageId: 'm1' });
+    expect(await code(chatApi.trace('c-luis', 'm3'))).toMatchObject({ status: 403 });
+    expect(await code(chatApi.trace('c-luis', 'no-existe'))).toMatchObject({ status: 404 });
+  });
+
+  it('abrir la conversación registra el «leído» de los mensajes ajenos una sola vez', async () => {
+    await loginAna();
+    await chatApi.messages('c-luis');
+    const m3 = mockControls.state.messages.find((m) => m.id === 'm3')!;
+    const primera = m3.receipts!.find((r) => r.userId === 'u-ana')!;
+    expect(primera.readAt).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 15));
+    await chatApi.messages('c-luis');
+    expect(m3.receipts!.find((r) => r.userId === 'u-ana')!.readAt).toBe(primera.readAt);
+  });
+
+  it('fotos: solo imágenes, máx. 5 MB, se envían las propias y una vez', async () => {
+    await loginAna();
+    const img = await chatApi.uploadImage('c-luis', new File([new Uint8Array(10)], 'a.png', { type: 'image/png' }));
+    expect(img).toMatchObject({ fileName: 'a.png', mimeType: 'image/png' });
+    expect(await code(chatApi.uploadImage('c-luis', new File(['<svg/>'], 'a.svg', { type: 'image/svg+xml' })))).toMatchObject({ status: 400 });
+    expect(await code(chatApi.uploadImage('c-luis', new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'g.png', { type: 'image/png' })))).toMatchObject({ status: 400 });
+    expect(await code(chatApi.uploadImage('c-conta', new File([new Uint8Array(10)], 'a.png', { type: 'image/png' }))) ).toBeNull();
+    const m = await chatApi.send('c-luis', '', [], { imageIds: [img.id] });
+    expect(m.images).toHaveLength(1);
+    expect(await code(chatApi.send('c-luis', '', [], { imageIds: [img.id] }))).toMatchObject({ status: 400 }); // ya usada
+    expect(await code(chatApi.send('c-luis', 'x', [], { imageIds: ['img-ajena'] }))).toMatchObject({ status: 400 });
   });
 
   it('no se puede leer una conversación ajena', async () => {

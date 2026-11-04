@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { UnauthenticatedError } from '../domain/auth-errors';
+import { RefreshRaceError, UnauthenticatedError } from '../domain/auth-errors';
 import { isSessionActive, SESSION_POLICY } from '../domain/session';
 import {
   CLOCK, Clock, SECURITY_EVENT_LOG, SecurityEventLog, SESSION_REPOSITORY, SessionRepository,
@@ -22,9 +22,13 @@ export class RefreshSessionUseCase {
 
     const current = await this.sessions.findByRefreshHash(hash);
     if (!current) {
-      // ¿Es un refresh YA usado? Entonces alguien lo copió: se revoca toda la sesión.
+      // ¿Es un refresh YA usado (fuera de la ventana de gracia)? Entonces alguien lo copió: se revoca toda la sesión.
       const reused = await this.sessions.findByPrevRefreshHash(hash);
       if (reused && !reused.revokedAt) {
+        // Dos pestañas refrescan a la vez: la perdedora llega con el token que la otra acaba de rotar.
+        if (reused.rotatedAt && now.getTime() - reused.rotatedAt.getTime() < SESSION_POLICY.rotationGraceMs) {
+          throw new RefreshRaceError();
+        }
         await this.sessions.revoke(reused.id, 'ROTATION_REUSE', now);
         await this.events.record({ type: 'REFRESH_REUSE', userId: reused.userId, sessionId: reused.id, deviceId: reused.deviceId, ...ctx });
       }

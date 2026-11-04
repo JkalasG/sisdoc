@@ -11,8 +11,10 @@ export class PrismaAdminDeviceRepository implements AdminDeviceRepository {
       include: { user: { select: { displayName: true, email: true } } },
       orderBy: { firstSeenAt: 'desc' },
     });
+    // Lo que espera una decisión va primero; dentro de cada grupo se conserva lo más reciente.
+    rows.sort((a, b) => Number(b.status === 'PENDING') - Number(a.status === 'PENDING'));
     return rows.map((d) => ({
-      id: d.id, user: d.user.displayName, email: d.user.email, label: d.label ?? 'Dispositivo',
+      id: d.id, userId: d.userId, user: d.user.displayName, email: d.user.email, label: d.label ?? 'Dispositivo',
       ip: d.lastIp ?? d.firstIp ?? '—', firstIp: d.firstIp ?? '—', code: d.id.slice(0, 8).toUpperCase(),
       userAgent: d.userAgent ?? '', status: d.status,
       firstSeen: d.firstSeenAt.toISOString(), lastSeen: d.lastSeenAt.toISOString(),

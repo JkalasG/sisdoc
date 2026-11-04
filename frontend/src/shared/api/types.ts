@@ -10,6 +10,13 @@ export type LoginResponse =
   | { status: 'OK'; user: CurrentUser; sessionExpiresAt: string }
   | { status: 'DEVICE_PENDING'; message: string };
 
+/** Qué opciones de verificación muestra el login. Lo decide el servidor (backend/.env); nunca incluye secretos. */
+export interface AuthConfig {
+  captcha: { enabled: boolean; siteKey: string | null };
+  google: { enabled: boolean; clientId: string | null };
+  passwordReset: { enabled: boolean };
+}
+
 export type DocStatus = 'BORRADOR' | 'REVISADO' | 'EN_REVISION' | 'APROBADO' | 'RECHAZADO' | 'ARCHIVADO';
 /** Lo que la persona elige al cargar un documento nuevo. */
 export type EstadoInicial = Extract<DocStatus, 'BORRADOR' | 'REVISADO'>;
@@ -81,12 +88,39 @@ export interface AttachmentDTO {
 export interface MessageDTO {
   id: string; conversationId: string; authorId: string; authorName: string;
   content?: string; attachments: AttachmentDTO[]; createdAt: string;
+  /** Fotos del mensaje (PNG, JPEG, GIF o WebP). */
+  images?: ImageDTO[];
+  /** Mensaje al que se responde, resumido. */
+  replyToId?: string;
+  replyTo?: QuoteDTO;
+  /** Fecha y hora de la última edición (solo si se editó). */
+  editedAt?: string;
+  /** Solo en MIS mensajes: un acuse por destinatario, con fecha y hora de entrega y de lectura. */
+  receipts?: ReceiptDTO[];
   // Solo prototipo (aún sin soporte en backend):
   kind?: 'text' | 'voice' | 'image';
   voiceSeconds?: number;
   imageSeed?: number;
-  replyTo?: { authorName: string; text: string };
 }
+export interface ImageDTO {
+  id: string; fileName: string; mimeType: string; sizeBytes: number; width: number; height: number;
+  /** Solo en el modo demostración (sin servidor): la imagen ya está en el navegador. */
+  url?: string;
+}
+export interface QuoteDTO { id: string; authorId: string; authorName: string; text: string; kind: 'TEXT' | 'IMAGE' | 'DOCUMENT' }
+export interface ReceiptDTO { userId: string; userName: string; deliveredAt: string | null; readAt: string | null }
+export interface MessageTraceDTO {
+  messageId: string; sentAt: string; status: 'SENT' | 'DELIVERED' | 'READ';
+  receipts: ReceiptDTO[];
+  edits: Array<{ at: string; editorId: string; previousContent?: string }>;
+}
+/** Novedad de acuses que el servidor envía a quien escribió los mensajes. */
+export interface ReceiptUpdateDTO {
+  conversationId: string; userId: string; userName: string;
+  items: Array<{ messageId: string; deliveredAt: string | null; readAt: string | null }>;
+}
+/** Una página del historial: `items` cronológicos; `nextCursor` pide la página anterior (null = no hay más). */
+export interface MessagePageDTO { items: MessageDTO[]; nextCursor: string | null }
 export interface ConversationDTO {
   id: string; type: 'DIRECT' | 'GROUP'; name: string; members: UserLite[];
   lastMessage?: { text: string; at: string }; unread: number;

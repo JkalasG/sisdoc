@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import {
-  cookieNamed, cookieValue, createApp, createUser, loggedInUser, login, PASSWORD, prisma,
+  cookieNamed, cookiesOf, cookieValue, createApp, createUser, loggedInUser, login, PASSWORD, prisma,
   resetDb, trustDevice, UA, XRW,
 } from './helpers';
 
@@ -105,6 +105,24 @@ describe('Inicio de sesión', () => {
     expect((await login(app, 'ana@empresa.com', PASSWORD, key)).res.status).toBe(401);
   });
 
+  it('dispositivos pendientes: máximo 5 por usuario (se descarta el más antiguo) y nunca se tocan los aprobados', async () => {
+    const user = await createUser('ana@empresa.com');
+    await trustDevice(user.id);
+    for (let i = 0; i < 8; i++) expect((await login(app, 'ana@empresa.com', PASSWORD)).res.status).toBe(202);
+    const pending = await prisma.device.findMany({ where: { userId: user.id, status: 'PENDING' } });
+    expect(pending).toHaveLength(5);
+    expect(await prisma.device.count({ where: { userId: user.id, status: 'TRUSTED' } })).toBe(1);
+  });
+
+  it('los pendientes de otro usuario no cuentan ni se descartan', async () => {
+    const ana = await createUser('ana@empresa.com');
+    const luis = await createUser('luis@empresa.com');
+    for (let i = 0; i < 6; i++) await login(app, 'ana@empresa.com', PASSWORD);
+    await login(app, 'luis@empresa.com', PASSWORD);
+    expect(await prisma.device.count({ where: { userId: ana.id } })).toBe(5);
+    expect(await prisma.device.count({ where: { userId: luis.id } })).toBe(1);
+  });
+
   it('dispositivo bloqueado → 403', async () => {
     const user = await createUser('ana@empresa.com');
     const { key, device } = await trustDevice(user.id);
@@ -150,11 +168,25 @@ describe('Sesión: acceso, refresh y cierre', () => {
     const { agent, loginRes } = await loggedInUser(app, 'ana@empresa.com');
     const oldRefresh = `sisdoc_rt=${cookieValue(loginRes, 'sisdoc_rt')}`;
     await agent.post(`${API}/auth/refresh`).set(XRW); // el usuario rota legítimamente
+    await prisma.session.updateMany({ data: { rotatedAt: new Date(Date.now() - 60_000) } }); // ya pasó la ventana de gracia
     const attacker = await request(app.getHttpServer()).post(`${API}/auth/refresh`).set(XRW).set('Cookie', oldRefresh);
     expect(attacker.status).toBe(401);
     expect((await agent.get(`${API}/auth/me`)).status).toBe(401); // el access aún vigente también cae
     expect((await agent.post(`${API}/auth/refresh`).set(XRW)).status).toBe(401);
     expect(await prisma.securityEvent.count({ where: { type: 'REFRESH_REUSE' } })).toBe(1);
+  });
+
+  it('carrera entre pestañas: el token recién rotado da 401 REFRESH_IN_PROGRESS sin revocar ni borrar cookies', async () => {
+    const { agent, loginRes } = await loggedInUser(app, 'ana@empresa.com');
+    const staleTab = `sisdoc_rt=${cookieValue(loginRes, 'sisdoc_rt')}`;
+    await agent.post(`${API}/auth/refresh`).set(XRW); // la pestaña A gana la carrera
+    const loser = await request(app.getHttpServer()).post(`${API}/auth/refresh`).set(XRW).set('Cookie', staleTab);
+    expect(loser.status).toBe(401);
+    expect(loser.body.code).toBe('REFRESH_IN_PROGRESS');
+    expect(cookiesOf(loser).filter((c) => c.startsWith('sisdoc_'))).toHaveLength(0); // no se borra ninguna cookie
+    expect((await agent.get(`${API}/auth/me`)).status).toBe(200); // la sesión sigue viva
+    expect((await agent.post(`${API}/auth/refresh`).set(XRW)).status).toBe(200); // y el reintento con la cookie nueva funciona
+    expect(await prisma.securityEvent.count({ where: { type: 'REFRESH_REUSE' } })).toBe(0);
   });
 
   it('refresh sin cookie → 401', async () => {

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { ChangePasswordPage } from '@/features/auth/pages/ChangePasswordPage';
 import { LoginPage } from '@/features/auth/pages/LoginPage';
+import { ForgotPasswordPage } from '@/features/auth/pages/ForgotPasswordPage';
 import { RequireAuth } from '@/features/auth/components/RequireAuth';
 import { useSession } from '@/features/auth/store/session';
 import { ChatPage } from '@/features/chat/pages/ChatPage';
@@ -34,6 +35,7 @@ export function App() {
     <>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/recuperar" element={<ForgotPasswordPage />} />
         <Route element={<RequireAuth />}>
           <Route path="/cambiar-clave" element={<ChangePasswordPage />} />
           <Route element={<RequireAdmin />}>

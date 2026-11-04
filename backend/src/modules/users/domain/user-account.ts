@@ -2,7 +2,7 @@ import { ConflictError, ForbiddenError, ValidationError } from '../../../shared/
 
 export const ROLES = ['ADMIN', 'MODERADOR', 'AUDITOR', 'USUARIO'] as const;
 export type Role = (typeof ROLES)[number];
-export type AccountStatus = 'ACTIVE' | 'DISABLED';
+export type AccountStatus = 'ACTIVE' | 'DISABLED' | 'PENDING'; // PENDING = registrada con Google, a la espera de un administrador
 
 export interface Account {
   id: string;

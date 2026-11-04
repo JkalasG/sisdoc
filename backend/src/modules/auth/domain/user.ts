@@ -1,10 +1,11 @@
-export type UserStatus = 'ACTIVE' | 'DISABLED';
+export type UserStatus = 'ACTIVE' | 'DISABLED' | 'PENDING';
 
 export interface User {
   id: string;
   email: string;
   displayName: string;
   passwordHash: string | null;
+  googleSub: string | null;
   status: UserStatus;
   roles?: string[];
   mustChangePassword: boolean;

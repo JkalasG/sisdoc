@@ -14,6 +14,7 @@ datasource db {
 enum UserStatus {
   ACTIVE
   DISABLED
+  PENDING // se registró con Google y espera que un administrador active la cuenta
 }
 
 enum DeviceStatus {
@@ -26,7 +27,8 @@ model User {
   id                 String     @id @default(uuid())
   email              String     @unique // normalizado en minúsculas
   displayName        String     @map("display_name")
-  passwordHash       String?    @map("password_hash") // null si solo usa Google (slice posterior)
+  passwordHash       String?    @map("password_hash") // null si solo usa Google
+  googleSub          String?    @unique @map("google_sub") // id estable de Google; se vincula en el primer ingreso
   status             UserStatus @default(ACTIVE)
   roles              String[]   @default([]) // ej. ["ADMIN"]
   mustChangePassword Boolean    @default(true) @map("must_change_password")
@@ -41,8 +43,24 @@ model User {
   sessions        Session[]
   devices         Device[]
   passwordHistory PasswordHistory[]
+  resetCode       PasswordResetCode?
 
   @@map("users")
+}
+
+// Código de un solo uso para recuperar la contraseña (uno vigente por usuario). Solo se guarda su HMAC, nunca el código.
+model PasswordResetCode {
+  userId          String   @id @map("user_id")
+  codeHash        String   @map("code_hash")
+  expiresAt       DateTime @map("expires_at") @db.Timestamptz(3)
+  attempts        Int      @default(0) // intentos fallidos con ESTE código
+  lastSentAt      DateTime @map("last_sent_at") @db.Timestamptz(3)
+  windowStartedAt DateTime @map("window_started_at") @db.Timestamptz(3) // inicio de la hora en que se cuentan los envíos
+  sentInWindow    Int      @default(1) @map("sent_in_window")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_codes")
 }
 
 model PasswordHistory {
@@ -90,6 +108,7 @@ model Session {
   deviceId          String    @map("device_id")
   refreshHash       String    @unique @map("refresh_hash") // SHA-256 del refresh vigente
   prevRefreshHash   String?   @map("prev_refresh_hash") // para detectar reutilización
+  rotatedAt         DateTime? @map("rotated_at") @db.Timestamptz(3) // última rotación: abre la ventana de gracia
   ip                String?
   userAgent         String?   @map("user_agent")
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -302,6 +321,8 @@ model Conversation {
   id        String           @id @default(uuid())
   type      ConversationType
   name      String?
+  // Solo en chats directos: los dos ids ordenados ("a:b"). El índice único impide dos chats entre las mismas personas.
+  directKey String?          @unique @map("direct_key")
   createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
 
   members  ConversationMember[]
@@ -318,21 +339,82 @@ model ConversationMember {
   conversation Conversation @relation(fields: [conversationId], references: [id])
 
   @@id([conversationId, userId])
+  @@index([userId]) // «mis conversaciones»: la clave primaria empieza por conversación, no por usuario
   @@map("conversation_members")
 }
 
 model Message {
-  id             String   @id @default(uuid())
-  conversationId String   @map("conversation_id")
-  authorId       String   @map("author_id")
+  id             String    @id @default(uuid())
+  conversationId String    @map("conversation_id")
+  authorId       String    @map("author_id")
   content        String?
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  // Respuesta a otro mensaje de la MISMA conversación (se valida en la aplicación).
+  replyToId      String?   @map("reply_to_id")
+  editedAt       DateTime? @map("edited_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   conversation Conversation        @relation(fields: [conversationId], references: [id])
+  replyTo      Message?            @relation("Respuestas", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[]           @relation("Respuestas")
   attachments  MessageAttachment[]
+  images       MessageImage[]
+  receipts     MessageReceipt[]
+  edits        MessageEdit[]
 
-  @@index([conversationId, createdAt])
+  @@index([conversationId, createdAt, id]) // paginación por claves del historial (más nuevo → más viejo)
+  @@index([authorId])
+  @@index([replyToId])
   @@map("messages")
+}
+
+/// Imagen del chat. Nace «en espera» (messageId nulo) al subirla y se enlaza al enviar el mensaje.
+model MessageImage {
+  id             String   @id @default(uuid())
+  messageId      String?  @map("message_id")
+  conversationId String   @map("conversation_id")
+  uploaderId     String   @map("uploader_id")
+  storageKey     String   @unique @map("storage_key")
+  fileName       String   @map("file_name")
+  mimeType       String   @map("mime_type")
+  sizeBytes      Int      @map("size_bytes")
+  width          Int
+  height         Int
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  message Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([conversationId, uploaderId, messageId])
+  @@map("message_images")
+}
+
+/// Acuse por destinatario. Los hitos se registran UNA vez (nunca se sobrescriben): trazabilidad para auditoría.
+model MessageReceipt {
+  messageId   String    @map("message_id")
+  userId      String    @map("user_id")
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamptz(3)
+  readAt      DateTime? @map("read_at") @db.Timestamptz(3)
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
+  @@index([userId, deliveredAt]) // «lo que aún no me ha llegado» al conectarme
+  @@index([userId, readAt])
+  @@map("message_receipts")
+}
+
+/// Historial de ediciones: solo se agrega. Guarda el texto que había ANTES de cada cambio.
+model MessageEdit {
+  id              String   @id @default(uuid())
+  messageId       String   @map("message_id")
+  editorId        String   @map("editor_id")
+  previousContent String?  @map("previous_content")
+  editedAt        DateTime @default(now()) @map("edited_at") @db.Timestamptz(3)
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId, editedAt])
+  @@map("message_edits")
 }
 
 model MessageAttachment {
@@ -343,5 +425,6 @@ model MessageAttachment {
 
   message Message @relation(fields: [messageId], references: [id])
 
+  @@index([messageId])
   @@map("message_attachments")
 }

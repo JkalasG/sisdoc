@@ -6,16 +6,17 @@ import { Btn, DataTable, PageHeader, Panel, Pill, SearchBox, Tabs, When, type To
 
 /** Usuario tal como lo entrega GET /admin/users. */
 interface ApiUser {
-  id: string; email: string; displayName: string; status: 'ACTIVE' | 'DISABLED'; roles: string[];
+  id: string; email: string; displayName: string; status: 'ACTIVE' | 'DISABLED' | 'PENDING'; roles: string[];
   mustChangePassword: boolean; locked: boolean; lockedUntil: string | null; lastLoginAt: string | null;
   createdAt: string; liveSessions: number;
 }
 
 const ROLES = ['ADMIN', 'MODERADOR', 'AUDITOR', 'USUARIO'] as const;
 const ROLE_LABEL: Record<string, string> = { ADMIN: 'Administrador', MODERADOR: 'Moderador', AUDITOR: 'Auditor', USUARIO: 'Usuario' };
-type Filter = 'all' | 'ACTIVE' | 'DISABLED' | 'LOCKED';
+type Filter = 'all' | 'ACTIVE' | 'DISABLED' | 'LOCKED' | 'PENDING';
 
 const stateOf = (u: ApiUser): { label: string; tone: Tone } =>
+  u.status === 'PENDING' ? { label: 'Pendiente de activación', tone: 'warn' } :
   u.status === 'DISABLED' ? { label: 'Deshabilitado', tone: 'mute' } : u.locked ? { label: 'Bloqueado', tone: 'bad' } : { label: 'Activo', tone: 'ok' };
 const rolesOf = (u: ApiUser) => (u.roles.length ? u.roles : ['USUARIO']).map((r) => ROLE_LABEL[r] ?? r).join(', ');
 const messageOf = (e: unknown) => (e as ApiError)?.message ?? 'No se pudo completar la acción';
@@ -28,6 +29,7 @@ export function UsersRealPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<ApiUser | null>(null);
+  const [activating, setActivating] = useState<ApiUser | null>(null);
   const [secret, setSecret] = useState<{ email: string; password: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -56,14 +58,14 @@ export function UsersRealPage() {
 
   return (
     <>
-      <PageHeader title="Usuarios" subtitle="Altas, bajas, roles y estado de acceso. Solo tú puedes crear cuentas: no hay auto-registro."
+      <PageHeader title="Usuarios" subtitle="Altas, bajas, roles y estado de acceso. Quien se registra con Google queda pendiente hasta que lo actives aquí."
         actions={<button className="btn-primary !py-2 text-sm" onClick={() => setCreating(true)}><Plus className="h-4 w-4" /> Nuevo usuario</button>} />
       {error && <div className="mb-3"><ErrorNote message={error} /></div>}
       <Panel flush>
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-2">
           <Tabs value={filter} onChange={setFilter} items={[
             { id: 'all', label: 'Todos', count: all.length }, { id: 'ACTIVE', label: 'Activos', count: count('ACTIVE') },
-            { id: 'LOCKED', label: 'Bloqueados', count: count('LOCKED') }, { id: 'DISABLED', label: 'Deshabilitados', count: count('DISABLED') },
+            { id: 'PENDING', label: 'Pendientes', count: count('PENDING') }, { id: 'LOCKED', label: 'Bloqueados', count: count('LOCKED') }, { id: 'DISABLED', label: 'Deshabilitados', count: count('DISABLED') },
           ]} />
           <SearchBox value={q} onChange={setQ} placeholder="Buscar usuario o correo" />
         </div>
@@ -83,7 +85,9 @@ export function UsersRealPage() {
                 {u.locked && <Btn tone="success" onClick={() => post(u, 'unlock')} label={`Desbloquear a ${u.displayName}`}><Unlock className="h-3.5 w-3.5" /></Btn>}
                 <Btn onClick={() => setEditing(u)} label={`Cambiar roles de ${u.displayName}`}><Pencil className="h-3.5 w-3.5" /></Btn>
                 <Btn onClick={() => reset(u)} label={`Restablecer contraseña de ${u.displayName}`}><KeyRound className="h-3.5 w-3.5" /></Btn>
-                {u.status === 'DISABLED'
+                {u.status === 'PENDING'
+                  ? <Btn tone="success" onClick={() => setActivating(u)} label={`Activar a ${u.displayName}`}><UserCheck className="h-3.5 w-3.5" /></Btn>
+                  : u.status === 'DISABLED'
                   ? <Btn tone="success" onClick={() => post(u, 'enable')} label={`Habilitar a ${u.displayName}`}><UserCheck className="h-3.5 w-3.5" /></Btn>
                   : <Btn tone="danger" onClick={() => disable(u)} label={`Deshabilitar a ${u.displayName}`}><ShieldOff className="h-3.5 w-3.5" /></Btn>}
               </span>) },
@@ -92,6 +96,7 @@ export function UsersRealPage() {
       </Panel>
 
       {creating && <NewUserModal onClose={() => setCreating(false)} onCreated={(email, password) => { setCreating(false); load(); setSecret({ email, password }); }} />}
+      {activating && <ActivateModal user={activating} onChanged={load} onClose={() => setActivating(null)} onDone={() => { setActivating(null); load(); }} />}
       {editing && <RolesModal user={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
       {secret && <SecretModal {...secret} onClose={() => setSecret(null)} />}
     </>
@@ -144,6 +149,80 @@ function NewUserModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
           <button className="btn-primary" disabled={!displayName || !email || saving}>{saving ? <Spinner className="h-4 w-4" /> : 'Crear usuario'}</button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+/** Dispositivo tal como lo entrega GET /admin/devices (solo lo que este modal necesita). */
+interface ApiDevice { id: string; userId?: string; label: string; ip: string; code?: string; status: string; firstSeen: string }
+
+/**
+ * Activar a quien se registró con Google: en el mismo paso se aprueban sus equipos pendientes, para no tener que ir
+ * después a Dispositivos. Cualquier equipo que llegue más tarde seguirá el bloqueo de dispositivo normal.
+ */
+function ActivateModal({ user, onClose, onDone, onChanged }: { user: ApiUser; onClose: () => void; onDone: () => void; onChanged: () => void }) {
+  const [devices, setDevices] = useState<ApiDevice[] | null>(null);
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    http<ApiDevice[]>('/admin/devices')
+      .then((all) => {
+        const mine = all.filter((d) => d.userId === user.id && d.status === 'PENDING');
+        setDevices(mine); setChosen(mine.map((d) => d.id));
+      })
+      .catch((e) => { setError(messageOf(e)); setDevices([]); });
+  }, [user.id]);
+
+  async function confirm() {
+    setSaving(true); setError(null);
+    try {
+      await http(`/admin/users/${user.id}/enable`, { method: 'POST' });
+      for (const id of chosen) await http(`/admin/devices/${id}/approve`, { method: 'POST' });
+      onDone();
+    } catch (err) {
+      setError(messageOf(err));
+      setSaving(false);
+      onChanged(); // si la cuenta ya quedó activa, la lista lo refleja aunque falle algún dispositivo
+    }
+  }
+  const toggle = (id: string) => setChosen((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
+
+  return (
+    <Modal title={`Activar a ${user.displayName}`} onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-sm text-ink-soft">
+          <strong>{user.email}</strong> se registró con Google y espera tu autorización. Al activarla podrá entrar con Google.
+        </p>
+        {devices === null ? (
+          <div className="flex justify-center py-4 text-brand"><Spinner className="h-5 w-5" /></div>
+        ) : devices.length ? (
+          <fieldset className="space-y-2">
+            <legend className="label">Dispositivos pendientes: aprobar también</legend>
+            {devices.map((d) => (
+              <label key={d.id} className="flex items-start gap-2.5 rounded-lg border border-line px-3 py-2.5 text-sm">
+                <input type="checkbox" className="mt-1" checked={chosen.includes(d.id)} onChange={() => toggle(d.id)} />
+                <span>
+                  <span className="block font-semibold">{d.label}</span>
+                  <span className="text-xs text-ink-soft">IP <code>{d.ip}</code>{d.code && <> · ID <code>{d.code}</code></>} · <When iso={d.firstSeen} /></span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        ) : (
+          <p className="rounded-lg bg-paper px-3 py-2.5 text-sm text-ink-soft">
+            No tiene dispositivos pendientes. Cuando entre por primera vez, su equipo aparecerá en Dispositivos para aprobarlo.
+          </p>
+        )}
+        <ErrorNote message={error} />
+        <div className="flex justify-end gap-2">
+          <button className="btn-ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn-primary" disabled={devices === null || saving} onClick={confirm}>
+            {saving ? <Spinner className="h-4 w-4" /> : chosen.length ? 'Activar cuenta y aprobar' : 'Activar cuenta'}
+          </button>
+        </div>
+      </div>
     </Modal>
   );
 }

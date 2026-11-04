@@ -44,10 +44,24 @@ export const authHooks = {
   onPasswordChangeRequired: () => {},
 };
 
+// Otra pestaña puede estar renovando la misma sesión: el servidor lo avisa con REFRESH_IN_PROGRESS y,
+// en cuanto esa pestaña deja la cookie nueva, el reintento sale con ella.
+const RACE_RETRIES = 3;
+const RACE_DELAY_MS = 300;
+
+async function refreshOnce(): Promise<boolean> {
+  for (let attempt = 0; ; attempt++) {
+    const r = await transport('/auth/refresh', { method: 'POST' });
+    if (r.status === 200) return true;
+    const raced = r.status === 401 && (r.data as { code?: string } | undefined)?.code === 'REFRESH_IN_PROGRESS';
+    if (!raced || attempt >= RACE_RETRIES) return false;
+    await new Promise((resolve) => setTimeout(resolve, RACE_DELAY_MS));
+  }
+}
+
 let refreshing: Promise<boolean> | null = null;
 function refreshSession(): Promise<boolean> {
-  refreshing ??= transport('/auth/refresh', { method: 'POST' })
-    .then((r) => r.status === 200)
+  refreshing ??= refreshOnce()
     .catch(() => false)
     .finally(() => { refreshing = null; });
   return refreshing;

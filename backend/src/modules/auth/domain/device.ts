@@ -7,7 +7,13 @@ export interface Device {
   label: string | null;
   status: DeviceStatus;
   lastIp: string | null;
+  firstSeenAt?: Date;
 }
+
+export const DEVICE_POLICY = {
+  maxPending: 5, // solicitudes sin resolver por usuario; al llegar otra, se descarta la más antigua
+  pendingTtlMs: 30 * 24 * 3_600_000, // un pendiente que nadie atendió en 30 días se descarta
+} as const;
 
 /** Etiqueta legible a partir del user-agent ("Chrome en Windows"). Solo informativa. */
 export function describeUserAgent(ua?: string): string {

@@ -63,7 +63,7 @@ describe('Política de bloqueo de cuenta', () => {
 
 describe('Política de sesión', () => {
   const session = (over: Partial<Session> = {}): Session => ({
-    id: 's', userId: 'u', deviceId: 'd', refreshHash: 'h', prevRefreshHash: null, ip: null, userAgent: null,
+    id: 's', userId: 'u', deviceId: 'd', refreshHash: 'h', prevRefreshHash: null, rotatedAt: null, ip: null, userAgent: null,
     createdAt: T0, lastActivityAt: T0, absoluteExpiresAt: new Date(T0.getTime() + SESSION_POLICY.absoluteMs),
     revokedAt: null, revokedReason: null, ...over,
   });

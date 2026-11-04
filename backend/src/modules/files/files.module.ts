@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { MulterModule } from '@nestjs/platform-express';
 import { AuthModule } from '../auth/auth.public-api';
 import { DocumentsApiService } from './application/documents-api.service';
 import { DownloadDocumentUseCase } from './application/download-document.use-case';
@@ -20,7 +22,14 @@ import { DocumentsController } from './presentation/documents.controller';
 import { OfficeCallbackController } from './presentation/office-callback.controller';
 
 @Module({
-  imports: [AuthModule], // JwtCookieGuard para proteger las rutas
+  imports: [
+    AuthModule, // JwtCookieGuard para proteger las rutas
+    // Tope de tamaño aplicado mientras llega el archivo: uno gigante se corta (413) en vez de llenar la memoria del servidor.
+    MulterModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (c: ConfigService) => ({ limits: { fileSize: Number(c.get('MAX_FILE_SIZE_MB', 50)) * 1024 * 1024, files: 1, fields: 20 } }),
+    }),
+  ],
   controllers: [DocumentsController, OfficeCallbackController],
   providers: [
     UploadDocumentUseCase, DownloadDocumentUseCase, ReviewDocumentUseCase,

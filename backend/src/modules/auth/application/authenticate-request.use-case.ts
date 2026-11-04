@@ -22,11 +22,18 @@ export class AuthenticateRequestUseCase {
   async execute(input: { accessToken: string }): Promise<AuthContext> {
     const claims = this.tokens.verifyAccess(input.accessToken);
     if (!claims) throw new UnauthenticatedError();
+    return this.verifySession(claims.sessionId, claims.userId);
+  }
 
-    const found = await this.sessions.findWithOwner(claims.sessionId);
+  /**
+   * Comprueba que la sesión siga viva (no revocada, no vencida, usuario activo, dispositivo de confianza).
+   * Lo usan las conexiones de larga vida (WebSocket), que no pasan por el guard en cada mensaje.
+   */
+  async verifySession(sessionId: string, userId: string): Promise<AuthContext> {
+    const found = await this.sessions.findWithOwner(sessionId);
     const now = this.clock.now();
     if (
-      !found || found.session.userId !== claims.userId || !isSessionActive(found.session, now) ||
+      !found || found.session.userId !== userId || !isSessionActive(found.session, now) ||
       found.user.status !== 'ACTIVE' || found.device.status !== 'TRUSTED'
     ) {
       throw new UnauthenticatedError();

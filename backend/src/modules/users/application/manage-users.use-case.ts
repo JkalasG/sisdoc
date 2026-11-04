@@ -71,9 +71,9 @@ export class ManageUsersUseCase {
 
   async enable(ctx: Ctx, id: string) {
     await this.assertAdmin(ctx.actorId);
-    await this.load(id);
+    const target = await this.load(id);
     await this.users.setStatus(id, 'ACTIVE');
-    await this.audit('USER_ENABLED', ctx, id);
+    await this.audit('USER_ENABLED', ctx, id, { from: target.status }); // from=PENDING: activación de un registro con Google
     return this.load(id);
   }
 

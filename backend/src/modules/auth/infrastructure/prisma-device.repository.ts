@@ -19,6 +19,16 @@ export class PrismaDeviceRepository implements DeviceRepository {
     });
   }
 
+  async prunePending(userId: string, keep: number, olderThan: Date) {
+    const pending = await this.prisma.device.findMany({
+      where: { userId, status: 'PENDING' }, orderBy: { firstSeenAt: 'desc' }, select: { id: true, firstSeenAt: true },
+    });
+    const drop = pending.filter((d, i) => i >= keep || d.firstSeenAt < olderThan).map((d) => d.id);
+    if (!drop.length) return 0;
+    const r = await this.prisma.device.deleteMany({ where: { id: { in: drop }, status: 'PENDING' } });
+    return r.count;
+  }
+
   async touch(id: string, ip: string | undefined, at: Date) {
     await this.prisma.device.update({ where: { id }, data: { lastIp: ip, lastSeenAt: at } });
   }

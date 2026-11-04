@@ -18,7 +18,8 @@ import { UsersModule } from './modules/users/users.module';
     // Límite global provisional; los perfiles configurables por usuario/IP llegan en el módulo de red.
     ThrottlerModule.forRoot({
       throttlers: [{ ttl: 60_000, limit: 120 }],
-      skipIf: () => process.env.DISABLE_THROTTLE === 'true', // solo para pruebas automáticas
+      // Solo en pruebas automáticas: un DISABLE_THROTTLE olvidado en producción NO debe apagar el freno a la fuerza bruta.
+      skipIf: () => process.env.NODE_ENV === 'test' && process.env.DISABLE_THROTTLE === 'true',
     }),
     PrismaModule,
     AuthModule,

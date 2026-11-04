@@ -163,6 +163,25 @@ describe('LoginUseCase', () => {
       expect(w.events.types()).toContain('DEVICE_NEW');
     });
 
+    it('acota los pendientes: máximo 5 por usuario, se descarta el más antiguo y no se tocan los aprobados', async () => {
+      const w = buildWorld();
+      await w.userWithTrustedDevice();
+      for (let i = 0; i < 8; i++) { await w.doLogin({ deviceKey: undefined }); w.clock.advance(1_000); }
+      const pending = w.devices.devices.filter((d) => d.status === 'PENDING');
+      expect(pending).toHaveLength(5);
+      expect(pending.map((d) => d.id)).toEqual(['dev-5', 'dev-6', 'dev-7', 'dev-8', 'dev-9']); // sobreviven los más nuevos
+      expect(w.devices.devices.filter((d) => d.status === 'TRUSTED')).toHaveLength(1);
+    });
+
+    it('descarta pendientes de más de 30 días', async () => {
+      const w = buildWorld();
+      await w.userWithTrustedDevice();
+      await w.doLogin({ deviceKey: undefined });
+      w.clock.advance(31 * 24 * 3_600_000);
+      await w.doLogin({ deviceKey: undefined });
+      expect(w.devices.devices.filter((d) => d.status === 'PENDING')).toHaveLength(1);
+    });
+
     it('con contraseña incorrecta NO se registra ningún dispositivo', async () => {
       const w = buildWorld();
       w.users.add(buildUser());

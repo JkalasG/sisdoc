@@ -31,6 +31,10 @@ export interface MockState {
     deviceBlocked: boolean;
     sessionLimit: boolean;         // el próximo login responde "ya tienes 3 sesiones"
     serverDown: boolean;           // simula backend caído
+    captchaEnabled: boolean;       // true = el login exige captcha (como CAPTCHA_ENABLED=true en el backend)
+    googleEnabled: boolean;        // true = aparece y funciona "Continuar con Google"
+    passwordResetEnabled: boolean; // true = "¿Olvidaste tu contraseña?" disponible (como MAIL_DRIVER != off en el backend)
+    googleAutoRegister: boolean;   // true = un correo desconocido se registra y queda pendiente de activación
   };
   failed: Record<string, { attempts: number; lockedUntil: number; level: number }>;
   clockOffsetMs: number;
@@ -158,6 +162,8 @@ export function initialState(): MockState {
     id, conversationId: c, authorId: u.id, authorName: u.name, content: text, attachments, createdAt: ago(min),
   });
   const messages: MessageDTO[] = [
+    // Historial largo (120 mensajes más antiguos) para ver la carga por páginas en el modo demostración.
+    ...Array.from({ length: 120 }, (_, i) => msg(`h${i}`, 'c-alfa', [luis, jorge, ana][i % 3], `Mensaje antiguo n.º ${i + 1} del proyecto`, 60 * 31 + (120 - i) * 7)),
     msg('m1', 'c-luis', ana, 'Luis, te envío el contrato para tu revisión. Quedó la cláusula 4 corregida.', 32),
     msg('m2', 'c-luis', ana, undefined, 31, [att('d-contrato', 3, 'contrato-servicios.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 87_300)]),
     msg('m3', 'c-luis', luis, 'Recibido, lo reviso esta tarde.', 25),
@@ -168,15 +174,26 @@ export function initialState(): MockState {
     { ...msg('m8', 'c-marta', marta, undefined, 50), kind: 'voice', voiceSeconds: 23 },
     { ...msg('m9', 'c-marta', marta, 'Cuando puedas escúchalo y me dices', 49) },
     { ...msg('m10', 'c-conta', jorge, 'Así quedó la nueva sala de reuniones', 120), kind: 'image', imageSeed: 3 },
-    { ...msg('m11', 'c-conta', marta, 'Se ve genial 👏', 110), replyTo: { authorName: 'Jorge Vargas', text: 'Así quedó la nueva sala de reuniones' } },
+    { ...msg('m11', 'c-conta', marta, 'Se ve genial 👏', 110), replyToId: 'm10', replyTo: { id: 'm10', authorId: jorge.id, authorName: 'Jorge Vargas', text: 'Así quedó la nueva sala de reuniones', kind: 'IMAGE' as const } },
     msg('m12', 'c-jorge', jorge, 'Ana, ¿tienes el reporte de gastos de ayer?', 60 * 6),
     msg('m13', 'c-jorge', ana, 'Sí, te lo subo en un momento.', 60 * 6 - 5),
     msg('m14', 'c-alfa', luis, 'Reunión de arranque mañana 9:00', 60 * 30),
   ];
 
+  // Mis mensajes llevan un acuse por destinatario con su fecha y hora (el servidor real hace lo mismo para quien envía).
+  const sec = (iso: string, s: number) => new Date(new Date(iso).getTime() + s * 1000).toISOString();
+  const unreadByThem = new Set(['m2']); // el único que alguien aún no leyó
+  for (const m of messages.filter((x) => x.authorId === ana.id)) {
+    const conv = conversations.find((c) => c.id === m.conversationId)!;
+    m.receipts = conv.memberIds.filter((id) => id !== ana.id).map((id) => {
+      const who = [luis, marta, jorge].find((u) => u.id === id)!;
+      return { userId: id, userName: who.name, deliveredAt: sec(m.createdAt, 3), readAt: unreadByThem.has(m.id) ? null : sec(m.createdAt, 41) };
+    });
+  }
+
   return {
     users: [ana, luis, marta, jorge, nueva, admin], docs, logs, conversations, messages, session: null,
-    scenario: { deviceKnown: true, deviceBlocked: false, sessionLimit: false, serverDown: false },
+    scenario: { deviceKnown: true, deviceBlocked: false, sessionLimit: false, serverDown: false, captchaEnabled: false, googleEnabled: false, googleAutoRegister: true, passwordResetEnabled: true },
     failed: {}, clockOffsetMs: 0, seq: 100,
   };
 }
